@@ -2,14 +2,18 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"os"
+	"os/user"
+	"path/filepath"
 
 	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/owner/v1beta1/ownerv1beta1connect"
 	ownerv1beta1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1beta1"
 	"connectrpc.com/connect"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jdx/go-netrc"
 )
 
 type model struct {
@@ -30,7 +34,22 @@ func run(ctx context.Context) error {
 		http.DefaultClient,
 		"https://buf.build",
 	)
-	resp, err := client.ListUsers(ctx, connect.NewRequest(&ownerv1beta1.ListUsersRequest{}))
+	usr, err := user.Current()
+	if err != nil {
+		return fmt.Errorf("getting current user: %s", err)
+	}
+	n, err := netrc.Parse(filepath.Join(usr.HomeDir, ".netrc"))
+	if err != nil {
+		return fmt.Errorf("parsing netrc: %s", err)
+	}
+	login := n.Machine("buf.build").Get("login")
+	token := n.Machine("buf.build").Get("password")
+	req := connect.NewRequest(&ownerv1beta1.ListUsersRequest{})
+	req.Header().Set(
+		"Authorization",
+		"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", login, token))),
+	)
+	resp, err := client.ListUsers(ctx, req)
 	if err != nil {
 		return fmt.Errorf("listing users: %s", err)
 	}
