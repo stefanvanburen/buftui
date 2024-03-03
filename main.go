@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"connectrpc.com/connect"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jdx/go-netrc"
+	"github.com/peterbourgon/ff/v4"
 )
 
 type model struct {
@@ -31,6 +33,16 @@ func main() {
 }
 
 func run(ctx context.Context) error {
+	fs := flag.NewFlagSet("buftui", flag.ContinueOnError)
+	var (
+		// hostFlag = fs.String("host", "", "host")
+		userFlag = fs.String("user", "", "user")
+	)
+
+	if err := ff.Parse(fs, os.Args[1:]); err != nil {
+		return fmt.Errorf("parsing flags: %w", err)
+	}
+
 	client := modulev1beta1connect.NewModuleServiceClient(
 		http.DefaultClient,
 		"https://buf.build",
@@ -45,11 +57,16 @@ func run(ctx context.Context) error {
 	}
 	login := n.Machine("buf.build").Get("login")
 	token := n.Machine("buf.build").Get("password")
+	moduleOwner := login
+	if userFlag != nil {
+		moduleOwner = *userFlag
+	}
+
 	req := connect.NewRequest(&modulev1beta1.ListModulesRequest{
 		OwnerRefs: []*ownerv1.OwnerRef{
 			{
 				Value: &ownerv1.OwnerRef_Name{
-					Name: login,
+					Name: moduleOwner,
 				},
 			},
 		},
