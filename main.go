@@ -9,15 +9,16 @@ import (
 	"os/user"
 	"path/filepath"
 
-	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/owner/v1beta1/ownerv1beta1connect"
-	ownerv1beta1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1beta1"
+	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/module/v1beta1/modulev1beta1connect"
+	modulev1beta1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1beta1"
+	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
 	"connectrpc.com/connect"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jdx/go-netrc"
 )
 
 type model struct {
-	choices  []string         // items on the to-do list
+	modules  []*modulev1beta1.Module
 	cursor   int              // which to-do list item our cursor is pointing at
 	selected map[int]struct{} // which to-do items are selected
 }
@@ -30,7 +31,7 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	client := ownerv1beta1connect.NewUserServiceClient(
+	client := modulev1beta1connect.NewModuleServiceClient(
 		http.DefaultClient,
 		"https://buf.build",
 	)
@@ -44,17 +45,27 @@ func run(ctx context.Context) error {
 	}
 	login := n.Machine("buf.build").Get("login")
 	token := n.Machine("buf.build").Get("password")
-	req := connect.NewRequest(&ownerv1beta1.ListUsersRequest{})
+	req := connect.NewRequest(&modulev1beta1.ListModulesRequest{
+		OwnerRefs: []*ownerv1.OwnerRef{
+			{
+				Value: &ownerv1.OwnerRef_Name{
+					Name: login,
+				},
+			},
+		},
+	})
 	req.Header().Set(
 		"Authorization",
 		"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", login, token))),
 	)
-	resp, err := client.ListUsers(ctx, req)
+	resp, err := client.ListModules(ctx, req)
 	if err != nil {
-		return fmt.Errorf("listing users: %s", err)
+		return fmt.Errorf("listing modules: %s", err)
 	}
-	fmt.Printf("resp: %v", resp.Msg.Users)
-	p := tea.NewProgram(initialModel())
+	fmt.Printf("modules: %v\n", resp.Msg.Modules)
+	model := initialModel()
+	model.modules = resp.Msg.Modules
+	p := tea.NewProgram(model)
 	if _, err := p.Run(); err != nil {
 		return err
 	}
@@ -62,15 +73,7 @@ func run(ctx context.Context) error {
 }
 
 func initialModel() model {
-	return model{
-		// Our to-do list is a grocery list
-		choices: []string{"Buy carrots", "Buy celery", "Buy kohlrabi"},
-
-		// A map which indicates which choices are selected. We're using
-		// the  map like a mathematical set. The keys refer to the indexes
-		// of the `choices` slice, above.
-		selected: make(map[int]struct{}),
-	}
+	return model{}
 }
 
 func (m model) Init() tea.Cmd {
@@ -99,7 +102,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// The "down" and "j" keys move the cursor down
 		case "down", "j":
-			if m.cursor < len(m.choices)-1 {
+			if m.cursor < len(m.modules)-1 {
 				m.cursor++
 			}
 
@@ -125,7 +128,7 @@ func (m model) View() string {
 	s := "What should we buy at the market?\n\n"
 
 	// Iterate over our choices
-	for i, choice := range m.choices {
+	for i, choice := range m.modules {
 
 		// Is the cursor pointing at this choice?
 		cursor := " " // no cursor
@@ -140,7 +143,7 @@ func (m model) View() string {
 		}
 
 		// Render the row
-		s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, choice)
+		s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, choice.Name)
 	}
 
 	// The footer
