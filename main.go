@@ -16,6 +16,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/jdx/go-netrc"
 	"github.com/peterbourgon/ff/v4"
 )
@@ -116,6 +117,20 @@ func run(ctx context.Context) error {
 		table.WithFocused(true),
 		table.WithHeight(tableHeight),
 	)
+	// Style table
+	s := table.DefaultStyles()
+	bufBlue := lipgloss.Color("#151fd5")
+	bufTeal := lipgloss.Color("#91dffb")
+	s.Header = s.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(bufBlue).
+		BorderBottom(true).
+		Bold(false)
+	s.Selected = s.Selected.
+		Foreground(bufTeal).
+		Background(bufBlue).
+		Bold(false)
+	model.moduleTable.SetStyles(s)
 	if _, err := tea.NewProgram(model).Run(); err != nil {
 		return err
 	}
