@@ -14,15 +14,20 @@ import (
 	modulev1beta1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1beta1"
 	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
 	"connectrpc.com/connect"
+	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jdx/go-netrc"
 	"github.com/peterbourgon/ff/v4"
 )
 
+// TODO:
+// * search for user / organization
+// * module view
+// * commit view
+// * docs view?
+
 type model struct {
-	modules  []*modulev1beta1.Module
-	cursor   int              // which to-do list item our cursor is pointing at
-	selected map[int]struct{} // which to-do items are selected
+	moduleTable table.Model
 }
 
 func main() {
@@ -35,7 +40,7 @@ func main() {
 func run(ctx context.Context) error {
 	fs := flag.NewFlagSet("buftui", flag.ContinueOnError)
 	var (
-		// hostFlag = fs.String("host", "", "host")
+		hostFlag = fs.String("host", "buf.build", "host")
 		userFlag = fs.String("user", "", "user")
 	)
 
@@ -45,7 +50,7 @@ func run(ctx context.Context) error {
 
 	client := modulev1beta1connect.NewModuleServiceClient(
 		http.DefaultClient,
-		"https://buf.build",
+		fmt.Sprintf("https://%s", *hostFlag),
 	)
 	usr, err := user.Current()
 	if err != nil {
@@ -55,10 +60,11 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("parsing netrc: %s", err)
 	}
-	login := n.Machine("buf.build").Get("login")
-	token := n.Machine("buf.build").Get("password")
+	// TODO: What should we do with neither set, or just one set?
+	login := n.Machine(*hostFlag).Get("login")
+	token := n.Machine(*hostFlag).Get("password")
 	moduleOwner := login
-	if userFlag != nil {
+	if *userFlag != "" {
 		moduleOwner = *userFlag
 	}
 
@@ -79,11 +85,38 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("listing modules: %s", err)
 	}
-	fmt.Printf("modules: %v\n", resp.Msg.Modules)
+	columns := []table.Column{
+		{Title: "ID", Width: 12},
+		{Title: "Name", Width: 20},
+		{Title: "Create Time", Width: 30},
+		{Title: "Visibility", Width: 30},
+	}
+	tableHeight := len(resp.Msg.Modules)
+	var rows []table.Row
+	// TODO: Handle no modules
+	if len(resp.Msg.Modules) == 0 {
+		rows = append(rows, table.Row{
+			"No modules found for user",
+		})
+		tableHeight = 1
+	} else {
+		for _, module := range resp.Msg.Modules {
+			rows = append(rows, table.Row{
+				module.Id,
+				module.Name,
+				module.CreateTime.String(),
+				module.Visibility.String(),
+			})
+		}
+	}
 	model := initialModel()
-	model.modules = resp.Msg.Modules
-	p := tea.NewProgram(model)
-	if _, err := p.Run(); err != nil {
+	model.moduleTable = table.New(
+		table.WithColumns(columns),
+		table.WithRows(rows),
+		table.WithFocused(true),
+		table.WithHeight(tableHeight),
+	)
+	if _, err := tea.NewProgram(model).Run(); err != nil {
 		return err
 	}
 	return nil
@@ -110,62 +143,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// These keys should exit the program.
 		case "ctrl+c", "q":
 			return m, tea.Quit
-
-		// The "up" and "k" keys move the cursor up
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-
-		// The "down" and "j" keys move the cursor down
-		case "down", "j":
-			if m.cursor < len(m.modules)-1 {
-				m.cursor++
-			}
-
-		// The "enter" key and the spacebar (a literal space) toggle
-		// the selected state for the item that the cursor is pointing at.
-		case "enter", " ":
-			_, ok := m.selected[m.cursor]
-			if ok {
-				delete(m.selected, m.cursor)
-			} else {
-				m.selected[m.cursor] = struct{}{}
-			}
+		case "enter":
+			return m, tea.Batch(
+				// TODO: Go to commits view for module.
+				tea.Printf("Let's go to %s!", m.moduleTable.SelectedRow()[1]),
+			)
 		}
 	}
-
-	// Return the updated model to the Bubble Tea runtime for processing.
-	// Note that we're not returning a command.
-	return m, nil
+	var cmd tea.Cmd
+	m.moduleTable, cmd = m.moduleTable.Update(msg)
+	return m, cmd
 }
 
 func (m model) View() string {
-	// The header
-	s := "What should we buy at the market?\n\n"
-
-	// Iterate over our choices
-	for i, choice := range m.modules {
-
-		// Is the cursor pointing at this choice?
-		cursor := " " // no cursor
-		if m.cursor == i {
-			cursor = ">" // cursor!
-		}
-
-		// Is this choice selected?
-		checked := " " // not selected
-		if _, ok := m.selected[i]; ok {
-			checked = "x" // selected!
-		}
-
-		// Render the row
-		s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, choice.Name)
-	}
-
-	// The footer
-	s += "\nPress q to quit.\n"
-
-	// Send the UI for rendering
-	return s
+	return m.moduleTable.View()
 }
