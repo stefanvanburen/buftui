@@ -38,6 +38,7 @@ type model struct {
 	loadingCommits       bool
 	commitsTableIsLoaded bool
 	commitsTable         table.Model
+	currentModule        string
 
 	hostname    string
 	login       string
@@ -96,7 +97,7 @@ func run(ctx context.Context) error {
 }
 
 func (m model) Init() tea.Cmd {
-	return getModules(m.login, m.token, m.hostname, m.moduleOwner)
+	return m.getModules()
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -220,13 +221,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// TODO: Only do this if we're currently on the module
 			// page, otherwise "enter" should do something else.
 			m.loadingCommits = true
-			return m, tea.Batch(getCommits(
-				m.login,
-				m.token,
-				m.hostname,
-				m.moduleOwner,
-				m.moduleTable.SelectedRow()[1], // module
-			))
+			m.currentModule = m.moduleTable.SelectedRow()[1]
+
+			return m, m.getCommits()
 		}
 	}
 	var cmd tea.Cmd
@@ -249,24 +246,24 @@ func (m model) View() string {
 
 type modulesMsg []*modulev1beta1.Module
 
-func getModules(login, token, hostname, owner string) tea.Cmd {
+func (m model) getModules() tea.Cmd {
 	return func() tea.Msg {
 		client := modulev1beta1connect.NewModuleServiceClient(
 			http.DefaultClient,
-			fmt.Sprintf("https://%s", hostname),
+			fmt.Sprintf("https://%s", m.hostname),
 		)
 		req := connect.NewRequest(&modulev1beta1.ListModulesRequest{
 			OwnerRefs: []*ownerv1.OwnerRef{
 				{
 					Value: &ownerv1.OwnerRef_Name{
-						Name: owner,
+						Name: m.moduleOwner,
 					},
 				},
 			},
 		})
 		req.Header().Set(
 			"Authorization",
-			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", login, token))),
+			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", m.login, m.token))),
 		)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -280,19 +277,19 @@ func getModules(login, token, hostname, owner string) tea.Cmd {
 
 type commitsMsg []*modulev1beta1.Commit
 
-func getCommits(login, token, hostname, owner, module string) tea.Cmd {
+func (m model) getCommits() tea.Cmd {
 	return func() tea.Msg {
 		client := modulev1beta1connect.NewCommitServiceClient(
 			http.DefaultClient,
-			fmt.Sprintf("https://%s", hostname),
+			fmt.Sprintf("https://%s", m.hostname),
 		)
 		req := connect.NewRequest(&modulev1beta1.GetCommitsRequest{
 			ResourceRefs: []*modulev1beta1.ResourceRef{
 				{
 					Value: &modulev1beta1.ResourceRef_Name_{
 						Name: &modulev1beta1.ResourceRef_Name{
-							Owner:  owner,
-							Module: module,
+							Owner:  m.moduleOwner,
+							Module: m.currentModule,
 						},
 					},
 				},
@@ -300,7 +297,7 @@ func getCommits(login, token, hostname, owner, module string) tea.Cmd {
 		})
 		req.Header().Set(
 			"Authorization",
-			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", login, token))),
+			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", m.login, m.token))),
 		)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
