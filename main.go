@@ -15,6 +15,7 @@ import (
 	modulev1beta1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1beta1"
 	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
 	"connectrpc.com/connect"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -29,7 +30,16 @@ import (
 // * docs view?
 
 type model struct {
-	moduleTable table.Model
+	spinner spinner.Model
+
+	// TODO: Better state management.
+	moduleTableIsLoaded bool
+	moduleTable         table.Model
+
+	hostname    string
+	login       string
+	token       string
+	moduleOwner string
 }
 
 func main() {
@@ -50,10 +60,6 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("parsing flags: %w", err)
 	}
 
-	client := modulev1beta1connect.NewModuleServiceClient(
-		http.DefaultClient,
-		fmt.Sprintf("https://%s", *hostFlag),
-	)
 	usr, err := user.Current()
 	if err != nil {
 		return fmt.Errorf("getting current user: %s", err)
@@ -70,94 +76,81 @@ func run(ctx context.Context) error {
 		moduleOwner = *userFlag
 	}
 
-	req := connect.NewRequest(&modulev1beta1.ListModulesRequest{
-		OwnerRefs: []*ownerv1.OwnerRef{
-			{
-				Value: &ownerv1.OwnerRef_Name{
-					Name: moduleOwner,
-				},
-			},
-		},
-	})
-	req.Header().Set(
-		"Authorization",
-		"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", login, token))),
-	)
-	resp, err := client.ListModules(ctx, req)
-	if err != nil {
-		return fmt.Errorf("listing modules: %s", err)
+	model := model{
+		hostname:    *hostFlag,
+		login:       login,
+		token:       token,
+		moduleOwner: moduleOwner,
+		spinner:     spinner.New(),
 	}
-	columns := []table.Column{
-		// TODO: adjust these dynamically?
-		{Title: "ID", Width: 12},
-		{Title: "Name", Width: 20},
-		{Title: "Create Time", Width: 19},
-		{Title: "Visibility", Width: 10},
-	}
-	tableHeight := len(resp.Msg.Modules)
-	var rows []table.Row
-	if len(resp.Msg.Modules) == 0 {
-		rows = append(rows, table.Row{
-			"No modules found for user",
-		})
-		tableHeight = 1
-	} else {
-		for _, module := range resp.Msg.Modules {
-			var visibility string
-			switch module.Visibility {
-			case modulev1beta1.ModuleVisibility_MODULE_VISIBILITY_PRIVATE:
-				visibility = "private"
-			case modulev1beta1.ModuleVisibility_MODULE_VISIBILITY_PUBLIC:
-				visibility = "public"
-			default:
-				visibility = "unknown"
-			}
-			rows = append(rows, table.Row{
-				module.Id,
-				module.Name,
-				module.CreateTime.AsTime().Format(time.DateTime),
-				visibility,
-			})
-		}
-	}
-	model := initialModel()
-	model.moduleTable = table.New(
-		table.WithColumns(columns),
-		table.WithRows(rows),
-		table.WithFocused(true),
-		table.WithHeight(tableHeight),
-	)
-	// Style table
-	s := table.DefaultStyles()
-	bufBlue := lipgloss.Color("#151fd5")
-	bufTeal := lipgloss.Color("#91dffb")
-	s.Header = s.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(bufBlue).
-		BorderBottom(true).
-		Bold(false)
-	s.Selected = s.Selected.
-		Foreground(bufTeal).
-		Background(bufBlue).
-		Bold(false)
-	model.moduleTable.SetStyles(s)
+
 	if _, err := tea.NewProgram(model).Run(); err != nil {
 		return err
 	}
 	return nil
 }
 
-func initialModel() model {
-	return model{}
-}
-
 func (m model) Init() tea.Cmd {
-	// Just return `nil`, which means "no I/O right now, please."
-	return nil
+	return getModules(m.login, m.token, m.hostname, m.moduleOwner)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case modulesMsg:
+		columns := []table.Column{
+			// TODO: adjust these dynamically?
+			{Title: "ID", Width: 12},
+			{Title: "Name", Width: 20},
+			{Title: "Create Time", Width: 19},
+			{Title: "Visibility", Width: 10},
+		}
+		tableHeight := len(msg)
+		var rows []table.Row
+		if len(msg) == 0 {
+			rows = append(rows, table.Row{
+				"No modules found for user",
+			})
+			tableHeight = 1
+		} else {
+			for _, module := range msg {
+				var visibility string
+				switch module.Visibility {
+				case modulev1beta1.ModuleVisibility_MODULE_VISIBILITY_PRIVATE:
+					visibility = "private"
+				case modulev1beta1.ModuleVisibility_MODULE_VISIBILITY_PUBLIC:
+					visibility = "public"
+				default:
+					visibility = "unknown"
+				}
+				rows = append(rows, table.Row{
+					module.Id,
+					module.Name,
+					module.CreateTime.AsTime().Format(time.DateTime),
+					visibility,
+				})
+			}
+		}
+		m.moduleTable = table.New(
+			table.WithColumns(columns),
+			table.WithRows(rows),
+			table.WithFocused(true),
+			table.WithHeight(tableHeight),
+		)
+		// Style table
+		s := table.DefaultStyles()
+		bufBlue := lipgloss.Color("#151fd5")
+		bufTeal := lipgloss.Color("#91dffb")
+		s.Header = s.Header.
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(bufBlue).
+			BorderBottom(true).
+			Bold(false)
+		s.Selected = s.Selected.
+			Foreground(bufTeal).
+			Background(bufBlue).
+			Bold(false)
+		m.moduleTable.SetStyles(s)
+		m.moduleTableIsLoaded = true
 
 	// Is it a key press?
 	case tea.KeyMsg:
@@ -181,5 +174,45 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	return m.moduleTable.View()
+	if m.moduleTableIsLoaded {
+		return m.moduleTable.View()
+	}
+	return m.spinner.View()
 }
+
+func getModules(login, token, hostname, owner string) tea.Cmd {
+	return func() tea.Msg {
+		client := modulev1beta1connect.NewModuleServiceClient(
+			http.DefaultClient,
+			fmt.Sprintf("https://%s", hostname),
+		)
+		req := connect.NewRequest(&modulev1beta1.ListModulesRequest{
+			OwnerRefs: []*ownerv1.OwnerRef{
+				{
+					Value: &ownerv1.OwnerRef_Name{
+						Name: owner,
+					},
+				},
+			},
+		})
+		req.Header().Set(
+			"Authorization",
+			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", login, token))),
+		)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		resp, err := client.ListModules(ctx, req)
+		if err != nil {
+			return errMsg{fmt.Errorf("listing modules: %s", err)}
+		}
+		return modulesMsg(resp.Msg.Modules)
+	}
+}
+
+type modulesMsg []*modulev1beta1.Module
+
+type errMsg struct{ err error }
+
+// For messages that contain errors it's often handy to also implement the
+// error interface on the message.
+func (e errMsg) Error() string { return e.err.Error() }
