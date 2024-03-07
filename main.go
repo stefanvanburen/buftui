@@ -46,7 +46,14 @@ type model struct {
 	moduleOwner string
 
 	err error
+
+	tableStyles table.Styles
 }
+
+var (
+	bufBlue = lipgloss.Color("#151fd5")
+	bufTeal = lipgloss.Color("#91dffb")
+)
 
 func main() {
 	if err := run(context.Background()); err != nil {
@@ -82,12 +89,24 @@ func run(ctx context.Context) error {
 		moduleOwner = *userFlag
 	}
 
+	tableStyles := table.DefaultStyles()
+	tableStyles.Header = tableStyles.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(bufBlue).
+		BorderBottom(true).
+		Bold(false)
+	tableStyles.Selected = tableStyles.Selected.
+		Foreground(bufTeal).
+		Background(bufBlue).
+		Bold(false)
+
 	model := model{
 		hostname:    *hostFlag,
 		login:       login,
 		token:       token,
 		moduleOwner: moduleOwner,
 		spinner:     spinner.New(),
+		tableStyles: tableStyles,
 	}
 
 	if _, err := tea.NewProgram(model).Run(); err != nil {
@@ -142,20 +161,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			table.WithFocused(true),
 			table.WithHeight(tableHeight),
 		)
-		// Style table
-		s := table.DefaultStyles()
-		bufBlue := lipgloss.Color("#151fd5")
-		bufTeal := lipgloss.Color("#91dffb")
-		s.Header = s.Header.
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(bufBlue).
-			BorderBottom(true).
-			Bold(false)
-		s.Selected = s.Selected.
-			Foreground(bufTeal).
-			Background(bufBlue).
-			Bold(false)
-		m.moduleTable.SetStyles(s)
+		m.moduleTable.SetStyles(m.tableStyles)
 		m.moduleTableIsLoaded = true
 
 	case commitsMsg:
@@ -188,20 +194,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			table.WithFocused(true),
 			table.WithHeight(tableHeight),
 		)
-		// Style table
-		s := table.DefaultStyles()
-		bufBlue := lipgloss.Color("#151fd5")
-		bufTeal := lipgloss.Color("#91dffb")
-		s.Header = s.Header.
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(bufBlue).
-			BorderBottom(true).
-			Bold(false)
-		s.Selected = s.Selected.
-			Foreground(bufTeal).
-			Background(bufBlue).
-			Bold(false)
-		m.commitsTable.SetStyles(s)
+		m.commitsTable.SetStyles(m.tableStyles)
 		m.commitsTableIsLoaded = true
 		m.loadingCommits = false
 
