@@ -33,13 +33,18 @@ type model struct {
 	spinner spinner.Model
 
 	// TODO: Better state management.
-	moduleTableIsLoaded bool
-	moduleTable         table.Model
+	moduleTableIsLoaded  bool
+	moduleTable          table.Model
+	loadingCommits       bool
+	commitsTableIsLoaded bool
+	commitsTable         table.Model
 
 	hostname    string
 	login       string
 	token       string
 	moduleOwner string
+
+	err error
 }
 
 func main() {
@@ -152,6 +157,56 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.moduleTable.SetStyles(s)
 		m.moduleTableIsLoaded = true
 
+	case commitsMsg:
+		columns := []table.Column{
+			// TODO: adjust these dynamically?
+			{Title: "ID", Width: 12},
+			{Title: "Create Time", Width: 19},
+			// TODO: What makes sense?
+			{Title: "Digest", Width: 19},
+		}
+		tableHeight := len(msg)
+		var rows []table.Row
+		if len(msg) == 0 {
+			rows = append(rows, table.Row{
+				"No commits found for module",
+			})
+			tableHeight = 1
+		} else {
+			for _, commit := range msg {
+				rows = append(rows, table.Row{
+					commit.Id,
+					commit.CreateTime.AsTime().Format(time.DateTime),
+					fmt.Sprintf("%s:%s", commit.Digest.Type.String(), commit.Digest.Value),
+				})
+			}
+		}
+		m.commitsTable = table.New(
+			table.WithColumns(columns),
+			table.WithRows(rows),
+			table.WithFocused(true),
+			table.WithHeight(tableHeight),
+		)
+		// Style table
+		s := table.DefaultStyles()
+		bufBlue := lipgloss.Color("#151fd5")
+		bufTeal := lipgloss.Color("#91dffb")
+		s.Header = s.Header.
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(bufBlue).
+			BorderBottom(true).
+			Bold(false)
+		s.Selected = s.Selected.
+			Foreground(bufTeal).
+			Background(bufBlue).
+			Bold(false)
+		m.commitsTable.SetStyles(s)
+		m.commitsTableIsLoaded = true
+		m.loadingCommits = false
+
+	case errMsg:
+		m.err = msg.err
+
 	// Is it a key press?
 	case tea.KeyMsg:
 
@@ -162,10 +217,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "enter":
-			return m, tea.Batch(
-				// TODO: Go to commits view for module.
-				tea.Printf("Let's go to %s!", m.moduleTable.SelectedRow()[1]),
-			)
+			// TODO: Only do this if we're currently on the module
+			// page, otherwise "enter" should do something else.
+			m.loadingCommits = true
+			return m, tea.Batch(getCommits(
+				m.login,
+				m.token,
+				m.hostname,
+				m.moduleOwner,
+				m.moduleTable.SelectedRow()[1], // module
+			))
 		}
 	}
 	var cmd tea.Cmd
@@ -174,11 +235,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	if m.moduleTableIsLoaded {
+	if m.err != nil {
+		return fmt.Sprintf("error: %v", m.err)
+	} else if m.moduleTableIsLoaded {
 		return m.moduleTable.View()
+	} else if m.loadingCommits {
+		return m.spinner.View()
+	} else if m.commitsTableIsLoaded {
+		return m.commitsTable.View()
 	}
 	return m.spinner.View()
 }
+
+type modulesMsg []*modulev1beta1.Module
 
 func getModules(login, token, hostname, owner string) tea.Cmd {
 	return func() tea.Msg {
@@ -209,7 +278,39 @@ func getModules(login, token, hostname, owner string) tea.Cmd {
 	}
 }
 
-type modulesMsg []*modulev1beta1.Module
+type commitsMsg []*modulev1beta1.Commit
+
+func getCommits(login, token, hostname, owner, module string) tea.Cmd {
+	return func() tea.Msg {
+		client := modulev1beta1connect.NewCommitServiceClient(
+			http.DefaultClient,
+			fmt.Sprintf("https://%s", hostname),
+		)
+		req := connect.NewRequest(&modulev1beta1.GetCommitsRequest{
+			ResourceRefs: []*modulev1beta1.ResourceRef{
+				{
+					Value: &modulev1beta1.ResourceRef_Name_{
+						Name: &modulev1beta1.ResourceRef_Name{
+							Owner:  owner,
+							Module: module,
+						},
+					},
+				},
+			},
+		})
+		req.Header().Set(
+			"Authorization",
+			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", login, token))),
+		)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		resp, err := client.GetCommits(ctx, req)
+		if err != nil {
+			return errMsg{fmt.Errorf("getting commits: %s", err)}
+		}
+		return commitsMsg(resp.Msg.Commits)
+	}
+}
 
 type errMsg struct{ err error }
 
