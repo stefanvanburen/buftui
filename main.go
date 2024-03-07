@@ -160,8 +160,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			table.WithRows(rows),
 			table.WithFocused(true),
 			table.WithHeight(tableHeight),
+			table.WithStyles(m.tableStyles),
 		)
-		m.moduleTable.SetStyles(m.tableStyles)
 		m.moduleTableIsLoaded = true
 
 	case commitsMsg:
@@ -193,8 +193,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			table.WithRows(rows),
 			table.WithFocused(true),
 			table.WithHeight(tableHeight),
+			table.WithStyles(m.tableStyles),
 		)
-		m.commitsTable.SetStyles(m.tableStyles)
 		m.commitsTableIsLoaded = true
 		m.loadingCommits = false
 
