@@ -96,7 +96,6 @@ func run(ctx context.Context) error {
 	}
 	tableHeight := len(resp.Msg.Modules)
 	var rows []table.Row
-	// TODO: Handle no modules
 	if len(resp.Msg.Modules) == 0 {
 		rows = append(rows, table.Row{
 			"No modules found for user",
