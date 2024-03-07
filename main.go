@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"time"
 
 	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/module/v1beta1/modulev1beta1connect"
 	modulev1beta1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1beta1"
@@ -87,10 +88,11 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("listing modules: %s", err)
 	}
 	columns := []table.Column{
+		// TODO: adjust these dynamically?
 		{Title: "ID", Width: 12},
 		{Title: "Name", Width: 20},
-		{Title: "Create Time", Width: 30},
-		{Title: "Visibility", Width: 30},
+		{Title: "Create Time", Width: 19},
+		{Title: "Visibility", Width: 10},
 	}
 	tableHeight := len(resp.Msg.Modules)
 	var rows []table.Row
@@ -102,11 +104,20 @@ func run(ctx context.Context) error {
 		tableHeight = 1
 	} else {
 		for _, module := range resp.Msg.Modules {
+			var visibility string
+			switch module.Visibility {
+			case modulev1beta1.ModuleVisibility_MODULE_VISIBILITY_PRIVATE:
+				visibility = "private"
+			case modulev1beta1.ModuleVisibility_MODULE_VISIBILITY_PUBLIC:
+				visibility = "public"
+			default:
+				visibility = "unknown"
+			}
 			rows = append(rows, table.Row{
 				module.Id,
 				module.Name,
-				module.CreateTime.String(),
-				module.Visibility.String(),
+				module.CreateTime.AsTime().Format(time.DateTime),
+				visibility,
 			})
 		}
 	}
