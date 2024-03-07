@@ -29,16 +29,23 @@ import (
 // * commit view
 // * docs view?
 
+type modelState string
+
+const (
+	modelStateLoadingModules  modelState = "loading-modules"
+	modelStateBrowsingModules modelState = "browsing-modules"
+	modelStateLoadingCommits  modelState = "loading-commits"
+	modelStateBrowsingCommits modelState = "browsing-commits"
+)
+
 type model struct {
+	state modelState
+
 	spinner spinner.Model
 
-	// TODO: Better state management.
-	moduleTableIsLoaded  bool
-	moduleTable          table.Model
-	loadingCommits       bool
-	commitsTableIsLoaded bool
-	commitsTable         table.Model
-	currentModule        string
+	moduleTable   table.Model
+	commitsTable  table.Model
+	currentModule string
 
 	hostname    string
 	login       string
@@ -101,6 +108,7 @@ func run(ctx context.Context) error {
 		Bold(false)
 
 	model := model{
+		state:       modelStateLoadingModules,
 		hostname:    *hostFlag,
 		login:       login,
 		token:       token,
@@ -162,7 +170,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			table.WithHeight(tableHeight),
 			table.WithStyles(m.tableStyles),
 		)
-		m.moduleTableIsLoaded = true
+		m.state = modelStateBrowsingModules
 
 	case commitsMsg:
 		columns := []table.Column{
@@ -171,6 +179,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			{Title: "Create Time", Width: 19},
 			// TODO: What makes sense?
 			{Title: "Digest", Width: 19},
+			// TODO: What else is useful here?
 		}
 		tableHeight := len(msg)
 		var rows []table.Row
@@ -195,8 +204,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			table.WithHeight(tableHeight),
 			table.WithStyles(m.tableStyles),
 		)
-		m.commitsTableIsLoaded = true
-		m.loadingCommits = false
+		m.state = modelStateBrowsingCommits
 
 	case errMsg:
 		m.err = msg.err
@@ -211,12 +219,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "enter":
-			// TODO: Only do this if we're currently on the module
-			// page, otherwise "enter" should do something else.
-			m.loadingCommits = true
-			m.currentModule = m.moduleTable.SelectedRow()[1]
-
-			return m, m.getCommits()
+			switch m.state {
+			case modelStateBrowsingModules:
+				m.state = modelStateLoadingCommits
+				m.currentModule = m.moduleTable.SelectedRow()[1]
+				return m, m.getCommits()
+			default:
+				// Don't do anything, yet, in other states.
+			}
 		}
 	}
 	var cmd tea.Cmd
@@ -227,14 +237,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	if m.err != nil {
 		return fmt.Sprintf("error: %v", m.err)
-	} else if m.moduleTableIsLoaded {
-		return m.moduleTable.View()
-	} else if m.loadingCommits {
-		return m.spinner.View()
-	} else if m.commitsTableIsLoaded {
-		return m.commitsTable.View()
 	}
-	return m.spinner.View()
+	switch m.state {
+	case modelStateLoadingModules:
+		return m.spinner.View()
+	case modelStateBrowsingModules:
+		return m.moduleTable.View()
+	case modelStateLoadingCommits:
+		return m.spinner.View()
+	case modelStateBrowsingCommits:
+		return m.moduleTable.View()
+	}
+	return fmt.Sprintf("unaccounted state: %v", m.state)
 }
 
 type modulesMsg []*modulev1beta1.Module
