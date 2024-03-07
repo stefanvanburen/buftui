@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 	modulev1beta1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1beta1"
 	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
 	"connectrpc.com/connect"
+	"github.com/bufbuild/httplb"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
@@ -255,8 +255,10 @@ type modulesMsg []*modulev1beta1.Module
 
 func (m model) getModules() tea.Cmd {
 	return func() tea.Msg {
-		client := modulev1beta1connect.NewModuleServiceClient(
-			http.DefaultClient,
+		client := httplb.NewClient()
+		defer client.Close()
+		moduleServiceClient := modulev1beta1connect.NewModuleServiceClient(
+			client,
 			fmt.Sprintf("https://%s", m.hostname),
 		)
 		req := connect.NewRequest(&modulev1beta1.ListModulesRequest{
@@ -274,7 +276,7 @@ func (m model) getModules() tea.Cmd {
 		)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		resp, err := client.ListModules(ctx, req)
+		resp, err := moduleServiceClient.ListModules(ctx, req)
 		if err != nil {
 			return errMsg{fmt.Errorf("listing modules: %s", err)}
 		}
@@ -286,8 +288,10 @@ type commitsMsg []*modulev1beta1.Commit
 
 func (m model) getCommits() tea.Cmd {
 	return func() tea.Msg {
-		client := modulev1beta1connect.NewCommitServiceClient(
-			http.DefaultClient,
+		client := httplb.NewClient()
+		defer client.Close()
+		commitServiceClient := modulev1beta1connect.NewCommitServiceClient(
+			client,
 			fmt.Sprintf("https://%s", m.hostname),
 		)
 		req := connect.NewRequest(&modulev1beta1.GetCommitsRequest{
@@ -308,7 +312,7 @@ func (m model) getCommits() tea.Cmd {
 		)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		resp, err := client.GetCommits(ctx, req)
+		resp, err := commitServiceClient.GetCommits(ctx, req)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting commits: %s", err)}
 		}
