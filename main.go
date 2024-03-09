@@ -69,7 +69,7 @@ func main() {
 	}
 }
 
-func run(ctx context.Context) error {
+func run(_ context.Context) error {
 	fs := flag.NewFlagSet("buftui", flag.ContinueOnError)
 	var (
 		hostFlag = fs.String("host", "buf.build", "host")
