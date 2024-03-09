@@ -246,7 +246,7 @@ func (m model) View() string {
 	case modelStateLoadingCommits:
 		return m.spinner.View()
 	case modelStateBrowsingCommits:
-		return m.moduleTable.View()
+		return m.commitsTable.View()
 	}
 	return fmt.Sprintf("unaccounted state: %v", m.state)
 }
