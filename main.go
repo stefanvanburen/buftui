@@ -181,6 +181,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			table.WithStyles(m.tableStyles),
 		)
 		m.state = modelStateBrowsingModules
+		return m, nil
 
 	case commitsMsg:
 		columns := []table.Column{
@@ -215,6 +216,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			table.WithStyles(m.tableStyles),
 		)
 		m.state = modelStateBrowsingCommits
+		return m, nil
 
 	case contentsMsg:
 		// TODO: This is a stupid way to display files - eventually, improve it.
@@ -246,6 +248,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			table.WithStyles(m.tableStyles),
 		)
 		m.state = modelStateBrowsingCommitContents
+		return m, nil
 
 	case errMsg:
 		m.err = msg.err
