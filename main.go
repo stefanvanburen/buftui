@@ -63,7 +63,7 @@ type model struct {
 	httpClient connect.HTTPClient
 }
 
-var (
+const (
 	bufBlue = lipgloss.Color("#151fd5")
 	bufTeal = lipgloss.Color("#91dffb")
 )
