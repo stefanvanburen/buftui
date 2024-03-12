@@ -59,6 +59,8 @@ type model struct {
 	err error
 
 	tableStyles table.Styles
+
+	httpClient connect.HTTPClient
 }
 
 var (
@@ -111,6 +113,9 @@ func run(_ context.Context) error {
 		Background(bufBlue).
 		Bold(false)
 
+	httpClient := httplb.NewClient()
+	defer httpClient.Close()
+
 	model := model{
 		state:       modelStateLoadingModules,
 		hostname:    *hostFlag,
@@ -119,6 +124,7 @@ func run(_ context.Context) error {
 		moduleOwner: moduleOwner,
 		spinner:     spinner.New(),
 		tableStyles: tableStyles,
+		httpClient:  httpClient,
 	}
 
 	if _, err := tea.NewProgram(model).Run(); err != nil {
@@ -306,10 +312,8 @@ type modulesMsg []*modulev1beta1.Module
 
 func (m model) getModules() tea.Cmd {
 	return func() tea.Msg {
-		client := httplb.NewClient()
-		defer client.Close()
 		moduleServiceClient := modulev1beta1connect.NewModuleServiceClient(
-			client,
+			m.httpClient,
 			fmt.Sprintf("https://%s", m.hostname),
 		)
 		req := connect.NewRequest(&modulev1beta1.ListModulesRequest{
@@ -325,9 +329,7 @@ func (m model) getModules() tea.Cmd {
 			"Authorization",
 			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", m.login, m.token))),
 		)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		resp, err := moduleServiceClient.ListModules(ctx, req)
+		resp, err := moduleServiceClient.ListModules(context.Background(), req)
 		if err != nil {
 			return errMsg{fmt.Errorf("listing modules: %s", err)}
 		}
@@ -339,10 +341,8 @@ type commitsMsg []*modulev1beta1.Commit
 
 func (m model) getCommits() tea.Cmd {
 	return func() tea.Msg {
-		client := httplb.NewClient()
-		defer client.Close()
 		commitServiceClient := modulev1beta1connect.NewCommitServiceClient(
-			client,
+			m.httpClient,
 			fmt.Sprintf("https://%s", m.hostname),
 		)
 		// TODO: This only supports getting a single commit per
@@ -366,9 +366,7 @@ func (m model) getCommits() tea.Cmd {
 			"Authorization",
 			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", m.login, m.token))),
 		)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		resp, err := commitServiceClient.GetCommits(ctx, req)
+		resp, err := commitServiceClient.GetCommits(context.Background(), req)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting commits: %s", err)}
 		}
@@ -383,7 +381,7 @@ func (m model) getCommitContent(commitName string) tea.Cmd {
 		client := httplb.NewClient()
 		defer client.Close()
 		commitServiceClient := modulev1beta1connect.NewDownloadServiceClient(
-			client,
+			m.httpClient,
 			fmt.Sprintf("https://%s", m.hostname),
 		)
 		req := connect.NewRequest(&modulev1beta1.DownloadRequest{
@@ -408,9 +406,7 @@ func (m model) getCommitContent(commitName string) tea.Cmd {
 			"Authorization",
 			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", m.login, m.token))),
 		)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		resp, err := commitServiceClient.Download(ctx, req)
+		resp, err := commitServiceClient.Download(context.Background(), req)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting commit content: %s", err)}
 		}
