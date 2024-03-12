@@ -229,8 +229,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
+
 	var cmd tea.Cmd
-	m.moduleTable, cmd = m.moduleTable.Update(msg)
+	switch m.state {
+	case modelStateBrowsingModules:
+		m.moduleTable, cmd = m.moduleTable.Update(msg)
+	case modelStateBrowsingCommits:
+		m.commitsTable, cmd = m.commitsTable.Update(msg)
+	}
 	return m, cmd
 }
 
