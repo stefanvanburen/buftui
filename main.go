@@ -300,6 +300,9 @@ func (m model) getCommits() tea.Cmd {
 			client,
 			fmt.Sprintf("https://%s", m.hostname),
 		)
+		// TODO: This only supports getting a single commit per
+		// reference; we ideally want a list of commits.
+		// Change this to `ListCommits`, once it's implemented.
 		req := connect.NewRequest(&modulev1beta1.GetCommitsRequest{
 			ResourceRefs: []*modulev1beta1.ResourceRef{
 				{
