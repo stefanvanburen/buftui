@@ -249,6 +249,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errMsg:
 		m.err = msg.err
+		return m, nil
 
 	case tea.KeyMsg:
 		switch msg.String() {
