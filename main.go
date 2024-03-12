@@ -32,10 +32,12 @@ import (
 type modelState string
 
 const (
-	modelStateLoadingModules  modelState = "loading-modules"
-	modelStateBrowsingModules modelState = "browsing-modules"
-	modelStateLoadingCommits  modelState = "loading-commits"
-	modelStateBrowsingCommits modelState = "browsing-commits"
+	modelStateLoadingModules         modelState = "loading-modules"
+	modelStateBrowsingModules        modelState = "browsing-modules"
+	modelStateLoadingCommits         modelState = "loading-commits"
+	modelStateBrowsingCommits        modelState = "browsing-commits"
+	modelStateLoadingCommitContents  modelState = "loading-commit-contents"
+	modelStateBrowsingCommitContents modelState = "browsing-commit-contents"
 )
 
 type model struct {
@@ -43,9 +45,11 @@ type model struct {
 
 	spinner spinner.Model
 
-	moduleTable   table.Model
-	commitsTable  table.Model
-	currentModule string
+	moduleTable      table.Model
+	commitsTable     table.Model
+	commitFilesTable table.Model
+	currentModule    string
+	currentCommit    string
 
 	hostname    string
 	login       string
@@ -206,6 +210,37 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 		m.state = modelStateBrowsingCommits
 
+	case contentsMsg:
+		// TODO: This is a stupid way to display files - eventually, improve it.
+		columns := []table.Column{
+			{Title: "Path", Width: 50},
+		}
+		rows := make([]table.Row, len(msg.Files))
+		// TODO: Cap this at something sane based on the terminal size?
+		tableHeight := len(msg.Files)
+		// This is probably not even possible?
+		if len(msg.Files) == 0 {
+			rows = append(rows, table.Row{
+				"No files found for commit",
+			})
+			tableHeight = 1
+		} else {
+			for i, file := range msg.Files {
+				rows[i] = table.Row{
+					file.Path,
+					// string(file.Content),
+				}
+			}
+		}
+		m.commitFilesTable = table.New(
+			table.WithColumns(columns),
+			table.WithRows(rows),
+			table.WithFocused(true),
+			table.WithHeight(tableHeight),
+			table.WithStyles(m.tableStyles),
+		)
+		m.state = modelStateBrowsingCommitContents
+
 	case errMsg:
 		m.err = msg.err
 
@@ -222,8 +257,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.state {
 			case modelStateBrowsingModules:
 				m.state = modelStateLoadingCommits
-				m.currentModule = m.moduleTable.SelectedRow()[1]
+				m.currentModule = m.moduleTable.SelectedRow()[1] // module name row
 				return m, m.getCommits()
+			case modelStateBrowsingCommits:
+				m.state = modelStateLoadingCommitContents
+				m.currentCommit = m.commitsTable.SelectedRow()[0] // commit name row
+				return m, m.getCommitContent(m.currentCommit)
 			default:
 				// Don't do anything, yet, in other states.
 			}
@@ -236,6 +275,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.moduleTable, cmd = m.moduleTable.Update(msg)
 	case modelStateBrowsingCommits:
 		m.commitsTable, cmd = m.commitsTable.Update(msg)
+	case modelStateBrowsingCommitContents:
+		m.commitFilesTable, cmd = m.commitFilesTable.Update(msg)
 	}
 	return m, cmd
 }
@@ -253,6 +294,10 @@ func (m model) View() string {
 		return m.spinner.View()
 	case modelStateBrowsingCommits:
 		return m.commitsTable.View()
+	case modelStateLoadingCommitContents:
+		return m.spinner.View()
+	case modelStateBrowsingCommitContents:
+		return m.commitFilesTable.View()
 	}
 	return fmt.Sprintf("unaccounted state: %v", m.state)
 }
@@ -328,6 +373,51 @@ func (m model) getCommits() tea.Cmd {
 			return errMsg{fmt.Errorf("getting commits: %s", err)}
 		}
 		return commitsMsg(resp.Msg.Commits)
+	}
+}
+
+type contentsMsg *modulev1beta1.DownloadResponse_Content
+
+func (m model) getCommitContent(commitName string) tea.Cmd {
+	return func() tea.Msg {
+		client := httplb.NewClient()
+		defer client.Close()
+		commitServiceClient := modulev1beta1connect.NewDownloadServiceClient(
+			client,
+			fmt.Sprintf("https://%s", m.hostname),
+		)
+		req := connect.NewRequest(&modulev1beta1.DownloadRequest{
+			Values: []*modulev1beta1.DownloadRequest_Value{
+				{
+					ResourceRef: &modulev1beta1.ResourceRef{
+						Value: &modulev1beta1.ResourceRef_Name_{
+							Name: &modulev1beta1.ResourceRef_Name{
+								Owner:  m.moduleOwner,
+								Module: m.currentModule,
+								Child: &modulev1beta1.ResourceRef_Name_Ref{
+									Ref: commitName,
+								},
+							},
+						},
+					},
+				},
+			},
+			DigestType: modulev1beta1.DigestType_DIGEST_TYPE_B4,
+		})
+		req.Header().Set(
+			"Authorization",
+			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", m.login, m.token))),
+		)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		resp, err := commitServiceClient.Download(ctx, req)
+		if err != nil {
+			return errMsg{fmt.Errorf("getting commit content: %s", err)}
+		}
+		if len(resp.Msg.Contents) != 1 {
+			return errMsg{fmt.Errorf("requested 1 commit contents, got %v", len(resp.Msg.Contents))}
+		}
+		return contentsMsg(resp.Msg.Contents[0])
 	}
 }
 
