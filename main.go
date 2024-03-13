@@ -82,8 +82,9 @@ func main() {
 func run(_ context.Context) error {
 	fs := flag.NewFlagSet("buftui", flag.ContinueOnError)
 	var (
-		hostFlag = fs.String("host", "buf.build", "host")
-		userFlag = fs.String("user", "", "user")
+		hostFlag       = fs.String("host", "buf.build", "host")
+		userFlag       = fs.String("user", "", "user")
+		fullscreenFlag = fs.Bool("fullscreen", false, "Enable fullscreen display")
 	)
 
 	if err := ff.Parse(fs, os.Args[1:]); err != nil {
@@ -131,7 +132,11 @@ func run(_ context.Context) error {
 		httpClient:  httpClient,
 	}
 
-	if _, err := tea.NewProgram(model).Run(); err != nil {
+	var options []tea.ProgramOption
+	if *fullscreenFlag {
+		options = append(options, tea.WithAltScreen())
+	}
+	if _, err := tea.NewProgram(model, options...).Run(); err != nil {
 		return err
 	}
 	return nil
