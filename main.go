@@ -33,12 +33,13 @@ import (
 type modelState string
 
 const (
-	modelStateLoadingModules         modelState = "loading-modules"
-	modelStateBrowsingModules        modelState = "browsing-modules"
-	modelStateLoadingCommits         modelState = "loading-commits"
-	modelStateBrowsingCommits        modelState = "browsing-commits"
-	modelStateLoadingCommitContents  modelState = "loading-commit-contents"
-	modelStateBrowsingCommitContents modelState = "browsing-commit-contents"
+	modelStateLoadingModules             modelState = "loading-modules"
+	modelStateBrowsingModules            modelState = "browsing-modules"
+	modelStateLoadingCommits             modelState = "loading-commits"
+	modelStateBrowsingCommits            modelState = "browsing-commits"
+	modelStateLoadingCommitContents      modelState = "loading-commit-contents"
+	modelStateBrowsingCommitContents     modelState = "browsing-commit-contents"
+	modelStateBrowsingCommitFileContents modelState = "browsing-commit-file-contents"
 )
 
 type model struct {
@@ -268,7 +269,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
-		case "enter":
+		case "enter", "l":
 			switch m.state {
 			case modelStateBrowsingModules:
 				m.state = modelStateLoadingCommits
@@ -278,8 +279,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = modelStateLoadingCommitContents
 				m.currentCommit = m.commitsTable.SelectedRow()[0] // commit name row
 				return m, m.getCommitContent(m.currentCommit)
+			case modelStateBrowsingCommitContents:
+				m.state = modelStateBrowsingCommitFileContents
 			default:
 				// Don't do anything, yet, in other states.
+			}
+		case "h":
+			// "h" -> "Go out"
+			switch m.state {
+			case modelStateBrowsingCommitFileContents:
+				m.state = modelStateBrowsingCommitContents
+			case modelStateBrowsingCommitContents:
+				m.state = modelStateBrowsingCommits
+			case modelStateBrowsingCommits:
+				m.state = modelStateBrowsingModules
 			}
 		}
 	}
@@ -297,6 +310,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.fileViewport.SetContent(string(file.Content))
 			}
 		}
+	case modelStateBrowsingCommitFileContents:
+		m.fileViewport, cmd = m.fileViewport.Update(msg)
 	}
 	return m, cmd
 }
@@ -316,7 +331,7 @@ func (m model) View() string {
 		return m.commitsTable.View()
 	case modelStateLoadingCommitContents:
 		return m.spinner.View()
-	case modelStateBrowsingCommitContents:
+	case modelStateBrowsingCommitContents, modelStateBrowsingCommitFileContents:
 		return lipgloss.JoinHorizontal(
 			lipgloss.Left,
 			m.commitFilesTable.View(),
