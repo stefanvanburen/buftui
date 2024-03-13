@@ -17,6 +17,7 @@ import (
 	"github.com/bufbuild/httplb"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/jdx/go-netrc"
@@ -45,11 +46,13 @@ type model struct {
 
 	spinner spinner.Model
 
-	moduleTable      table.Model
-	commitsTable     table.Model
-	commitFilesTable table.Model
-	currentModule    string
-	currentCommit    string
+	moduleTable        table.Model
+	commitsTable       table.Model
+	commitFilesTable   table.Model
+	currentModule      string
+	currentCommit      string
+	currentCommitFiles []*modulev1beta1.File
+	fileViewport       viewport.Model
 
 	hostname    string
 	login       string
@@ -248,6 +251,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			table.WithStyles(m.tableStyles),
 		)
 		m.state = modelStateBrowsingCommitContents
+		m.currentCommitFiles = msg.Files
+		m.fileViewport = viewport.New(80, tableHeight)
+		for _, file := range m.currentCommitFiles {
+			if file.Path == m.commitFilesTable.SelectedRow()[0] {
+				m.fileViewport.SetContent(string(file.Content))
+			}
+		}
 		return m, nil
 
 	case errMsg:
@@ -282,6 +292,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commitsTable, cmd = m.commitsTable.Update(msg)
 	case modelStateBrowsingCommitContents:
 		m.commitFilesTable, cmd = m.commitFilesTable.Update(msg)
+		for _, file := range m.currentCommitFiles {
+			if file.Path == m.commitFilesTable.SelectedRow()[0] {
+				m.fileViewport.SetContent(string(file.Content))
+			}
+		}
 	}
 	return m, cmd
 }
@@ -302,7 +317,11 @@ func (m model) View() string {
 	case modelStateLoadingCommitContents:
 		return m.spinner.View()
 	case modelStateBrowsingCommitContents:
-		return m.commitFilesTable.View()
+		return lipgloss.JoinHorizontal(
+			lipgloss.Left,
+			m.commitFilesTable.View(),
+			m.fileViewport.View(),
+		)
 	}
 	return fmt.Sprintf("unaccounted state: %v", m.state)
 }
