@@ -332,10 +332,17 @@ func (m model) View() string {
 	case modelStateLoadingCommitContents:
 		return m.spinner.View()
 	case modelStateBrowsingCommitContents, modelStateBrowsingCommitFileContents:
+		fileView := m.fileViewport.View()
+		if m.state == modelStateBrowsingCommitFileContents {
+			fileViewStyle := lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder(), true).
+				BorderForeground(bufBlue)
+			fileView = fileViewStyle.Render(fileView)
+		}
 		return lipgloss.JoinHorizontal(
 			lipgloss.Left,
 			m.commitFilesTable.View(),
-			m.fileViewport.View(),
+			fileView,
 		)
 	}
 	return fmt.Sprintf("unaccounted state: %v", m.state)
