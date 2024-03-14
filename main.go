@@ -290,6 +290,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				searchInput.PromptStyle = searchStyle
 				searchInput.PlaceholderStyle = searchStyle
 				searchInput.TextStyle = searchStyle
+				searchInput.Cursor.Style = searchStyle
 				searchInput.Focus()
 				searchInput.Placeholder = "bufbuild"
 				searchInput.Width = 20
@@ -387,7 +388,8 @@ func (m model) View() string {
 			fileView,
 		)
 	case modelStateSearching:
-		return m.searchInput.View()
+		header := "Search for an owner (user or organization)"
+		return header + "\n\n" + m.searchInput.View()
 	}
 	return fmt.Sprintf("unaccounted state: %v", m.state)
 }
