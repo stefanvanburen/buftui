@@ -6,6 +6,8 @@ buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.32.0-20240311192602-435
 buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.32.0-20240311192602-4350a0ecc53b.1/go.mod h1:RYfTyRB+M4zIkaXSm9UnxcAB3/OEihWH77CHAl4j1VQ=
 connectrpc.com/connect v1.15.0 h1:lFdeCbZrVVDydAqwr4xGV2y+ULn+0Z73s5JBj2LikWo=
 connectrpc.com/connect v1.15.0/go.mod h1:bQmjpDY8xItMnttnurVgOkHUBMRT9cpsNi2O4AjKhmA=
+github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=
+github.com/atotto/clipboard v0.1.4/go.mod h1:ZY9tmq7sm5xIbd9bOK4onWV4S6X0u6GY7Vn0Yu86PYI=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1/go.mod h1:uYgXzlJ7ZpABp8OJ+exZzJJhRNQ2ASbcXHWsFqH8hp8=
 github.com/bufbuild/httplb v0.1.0 h1:V83jtq+svY293T62QSj+gH3SWAoaUKLfCKCiwb4a26g=

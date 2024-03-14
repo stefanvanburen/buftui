@@ -17,6 +17,7 @@ import (
 	"github.com/bufbuild/httplb"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -40,6 +41,7 @@ const (
 	modelStateLoadingCommitContents      modelState = "loading-commit-contents"
 	modelStateBrowsingCommitContents     modelState = "browsing-commit-contents"
 	modelStateBrowsingCommitFileContents modelState = "browsing-commit-file-contents"
+	modelStateSearching                  modelState = "searching"
 )
 
 type model struct {
@@ -54,6 +56,7 @@ type model struct {
 	currentCommit      string
 	currentCommitFiles []*modulev1beta1.File
 	fileViewport       viewport.Model
+	searchInput        textinput.Model
 
 	hostname    string
 	login       string
@@ -274,7 +277,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
-		case "enter", "l":
+		case "s":
+			// From anywhere other than the search state, "s"
+			// enters a search state.
+			if m.state != modelStateSearching {
+				// "s" -> "search"
+				m.state = modelStateSearching
+				searchInput := textinput.New()
+				// Style the input.
+				// TODO: This is probably too much.
+				searchStyle := lipgloss.NewStyle().Foreground(bufBlue).Background(bufTeal)
+				searchInput.PromptStyle = searchStyle
+				searchInput.PlaceholderStyle = searchStyle
+				searchInput.TextStyle = searchStyle
+				searchInput.Focus()
+				searchInput.Placeholder = "bufbuild"
+				searchInput.Width = 20
+				m.searchInput = searchInput
+				return m, nil
+			}
+		case "enter":
+			switch m.state {
+			case modelStateSearching:
+				m.moduleOwner = m.searchInput.Value()
+				// TODO: Clear search input?
+				return m, m.getModules()
+			}
+			// enter or l are equivalent for all the cases below.
+			fallthrough
+		case "l":
 			switch m.state {
 			case modelStateBrowsingModules:
 				m.state = modelStateLoadingCommits
@@ -286,6 +317,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.getCommitContent(m.currentCommit)
 			case modelStateBrowsingCommitContents:
 				m.state = modelStateBrowsingCommitFileContents
+				return m, nil
 			default:
 				// Don't do anything, yet, in other states.
 			}
@@ -294,10 +326,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.state {
 			case modelStateBrowsingCommitFileContents:
 				m.state = modelStateBrowsingCommitContents
+				return m, nil
 			case modelStateBrowsingCommitContents:
 				m.state = modelStateBrowsingCommits
+				return m, nil
 			case modelStateBrowsingCommits:
 				m.state = modelStateBrowsingModules
+				return m, nil
 			}
 		}
 	}
@@ -317,6 +352,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case modelStateBrowsingCommitFileContents:
 		m.fileViewport, cmd = m.fileViewport.Update(msg)
+	case modelStateSearching:
+		m.searchInput, cmd = m.searchInput.Update(msg)
 	}
 	return m, cmd
 }
@@ -349,6 +386,8 @@ func (m model) View() string {
 			m.commitFilesTable.View(),
 			fileView,
 		)
+	case modelStateSearching:
+		return m.searchInput.View()
 	}
 	return fmt.Sprintf("unaccounted state: %v", m.state)
 }
