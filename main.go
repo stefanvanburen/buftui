@@ -258,7 +258,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 		m.state = modelStateBrowsingCommitContents
 		m.currentCommitFiles = msg.Files
-		m.fileViewport = viewport.New(100, max(tableHeight, 50))
+		m.fileViewport = viewport.New(100, max(tableHeight, 30))
 		for _, file := range m.currentCommitFiles {
 			if file.Path == m.commitFilesTable.SelectedRow()[0] {
 				m.fileViewport.SetContent(string(file.Content))
@@ -364,11 +364,11 @@ func (m model) View() string {
 	case modelStateLoadingModules:
 		return m.spinner.View()
 	case modelStateBrowsingModules:
-		return m.moduleTable.View()
+		return fmt.Sprintf("Modules (Owner: %s)\n", m.moduleOwner) + m.moduleTable.View()
 	case modelStateLoadingCommits:
 		return m.spinner.View()
 	case modelStateBrowsingCommits:
-		return m.commitsTable.View()
+		return fmt.Sprintf("Commits (Module: %s/%s)\n", m.moduleOwner, m.currentModule) + m.commitsTable.View()
 	case modelStateLoadingCommitContents:
 		return m.spinner.View()
 	case modelStateBrowsingCommitContents, modelStateBrowsingCommitFileContents:
@@ -379,10 +379,14 @@ func (m model) View() string {
 				BorderForeground(bufBlue)
 			fileView = fileViewStyle.Render(fileView)
 		}
-		return lipgloss.JoinHorizontal(
+		return lipgloss.JoinVertical(
 			lipgloss.Left,
-			m.commitFilesTable.View(),
-			fileView,
+			fmt.Sprintf("Commit %s (Module: %s/%s)\n", m.currentCommit, m.moduleOwner, m.currentModule),
+			lipgloss.JoinHorizontal(
+				lipgloss.Top,
+				m.commitFilesTable.View(),
+				fileView,
+			),
 		)
 	case modelStateSearching:
 		header := "Search for an owner (user or organization)"
