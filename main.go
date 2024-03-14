@@ -246,10 +246,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			tableHeight = 1
 		} else {
 			for i, file := range msg.Files {
-				rows[i] = table.Row{
-					file.Path,
-					// string(file.Content),
-				}
+				rows[i] = table.Row{file.Path}
 			}
 		}
 		m.commitFilesTable = table.New(
@@ -261,7 +258,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 		m.state = modelStateBrowsingCommitContents
 		m.currentCommitFiles = msg.Files
-		m.fileViewport = viewport.New(80, tableHeight)
+		m.fileViewport = viewport.New(100, max(tableHeight, 50))
 		for _, file := range m.currentCommitFiles {
 			if file.Path == m.commitFilesTable.SelectedRow()[0] {
 				m.fileViewport.SetContent(string(file.Content))
