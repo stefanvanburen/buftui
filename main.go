@@ -15,6 +15,8 @@ import (
 	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
 	"connectrpc.com/connect"
 	"github.com/bufbuild/httplb"
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -49,6 +51,8 @@ type model struct {
 
 	spinner spinner.Model
 
+	// TODO: Share a single table and just hold on to the messages and
+	// re-render?
 	moduleTable        table.Model
 	commitsTable       table.Model
 	commitFilesTable   table.Model
@@ -57,6 +61,9 @@ type model struct {
 	currentCommitFiles []*modulev1beta1.File
 	fileViewport       viewport.Model
 	searchInput        textinput.Model
+	help               help.Model
+
+	keys keyMap
 
 	hostname    string
 	login       string
@@ -74,6 +81,80 @@ const (
 	bufBlue = lipgloss.Color("#151fd5")
 	bufTeal = lipgloss.Color("#91dffb")
 )
+
+// keyMap defines a set of keybindings. To work for help it must satisfy
+// key.Map. It could also very easily be a map[string]key.Binding.
+type keyMap struct {
+	Up     key.Binding
+	Down   key.Binding
+	Left   key.Binding
+	Right  key.Binding
+	Search key.Binding
+	Enter  key.Binding
+	Help   key.Binding
+	Quit   key.Binding
+}
+
+func (m model) ShortHelp() []key.Binding {
+	switch m.state {
+	case modelStateBrowsingModules:
+		// Can't go Left while browsing modules; already at the "top".
+		return []key.Binding{keys.Up, keys.Down, keys.Right}
+	case modelStateBrowsingCommits, modelStateBrowsingCommitContents:
+		return []key.Binding{keys.Right, keys.Left}
+	case modelStateBrowsingCommitFileContents:
+		// Can't go Right while browsing file contents; already at the "bottom".
+		return []key.Binding{keys.Up, keys.Down, keys.Left}
+	case modelStateSearching:
+		return []key.Binding{keys.Enter}
+	default:
+		return []key.Binding{keys.Help, keys.Quit}
+	}
+}
+
+func (m model) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		m.ShortHelp(),
+		{keys.Help, keys.Quit},
+	}
+}
+
+var keys = keyMap{
+	// TODO: Ideally we'd pull these from the viewing model KeyMap defaults
+	// (e.g. m.fileViewport.KeyMap); for now just give some basics.
+	Up: key.NewBinding(
+		key.WithKeys("up", "k"),
+		key.WithHelp("↑/k", "move up"),
+	),
+	Down: key.NewBinding(
+		key.WithKeys("down", "j"),
+		key.WithHelp("↓/j", "move down"),
+	),
+	Left: key.NewBinding(
+		key.WithKeys("left", "h"),
+		key.WithHelp("←/h", "go out"),
+	),
+	Right: key.NewBinding(
+		key.WithKeys("right", "l"),
+		key.WithHelp("→/l", "go in"),
+	),
+	Enter: key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "search"),
+	),
+	Search: key.NewBinding(
+		key.WithKeys("s"),
+		key.WithHelp("s", "search for owner"),
+	),
+	Help: key.NewBinding(
+		key.WithKeys("?"),
+		key.WithHelp("?", "toggle help"),
+	),
+	Quit: key.NewBinding(
+		key.WithKeys("q", "esc", "ctrl+c"),
+		key.WithHelp("q", "quit"),
+	),
+}
 
 func main() {
 	if err := run(context.Background()); err != nil {
@@ -133,6 +214,8 @@ func run(_ context.Context) error {
 		spinner:     spinner.New(),
 		tableStyles: tableStyles,
 		httpClient:  httpClient,
+		help:        help.New(),
+		keys:        keys,
 	}
 
 	var options []tea.ProgramOption
@@ -151,6 +234,11 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		// If we set a width on the help menu it can gracefully truncate
+		// its view as needed.
+		m.help.Width = msg.Width
+
 	case modulesMsg:
 		columns := []table.Column{
 			// TODO: adjust these dynamically?
@@ -271,10 +359,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
+		switch {
+		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
-		case "s":
+		case key.Matches(msg, m.keys.Help):
+			m.help.ShowAll = !m.help.ShowAll
+		case key.Matches(msg, m.keys.Search):
 			// From anywhere other than the search state, "s"
 			// enters a search state.
 			if m.state != modelStateSearching {
@@ -294,7 +384,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.searchInput = searchInput
 				return m, nil
 			}
-		case "enter":
+		case key.Matches(msg, m.keys.Enter):
 			switch m.state {
 			case modelStateSearching:
 				m.moduleOwner = m.searchInput.Value()
@@ -303,7 +393,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// enter or l are equivalent for all the cases below.
 			fallthrough
-		case "l":
+		case key.Matches(msg, m.keys.Right):
 			switch m.state {
 			case modelStateBrowsingModules:
 				m.state = modelStateLoadingCommits
@@ -319,7 +409,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			default:
 				// Don't do anything, yet, in other states.
 			}
-		case "h":
+		case key.Matches(msg, m.keys.Left):
 			// "h" -> "Go out"
 			switch m.state {
 			case modelStateBrowsingCommitFileContents:
@@ -360,17 +450,18 @@ func (m model) View() string {
 	if m.err != nil {
 		return fmt.Sprintf("error: %v", m.err)
 	}
+	var view string
 	switch m.state {
 	case modelStateLoadingModules:
-		return m.spinner.View()
+		view = m.spinner.View()
 	case modelStateBrowsingModules:
-		return fmt.Sprintf("Modules (Owner: %s)\n", m.moduleOwner) + m.moduleTable.View()
+		view = fmt.Sprintf("Modules (Owner: %s)\n", m.moduleOwner) + m.moduleTable.View()
 	case modelStateLoadingCommits:
-		return m.spinner.View()
+		view = m.spinner.View()
 	case modelStateBrowsingCommits:
-		return fmt.Sprintf("Commits (Module: %s/%s)\n", m.moduleOwner, m.currentModule) + m.commitsTable.View()
+		view = fmt.Sprintf("Commits (Module: %s/%s)\n", m.moduleOwner, m.currentModule) + m.commitsTable.View()
 	case modelStateLoadingCommitContents:
-		return m.spinner.View()
+		view = m.spinner.View()
 	case modelStateBrowsingCommitContents, modelStateBrowsingCommitFileContents:
 		fileView := m.fileViewport.View()
 		if m.state == modelStateBrowsingCommitFileContents {
@@ -379,7 +470,7 @@ func (m model) View() string {
 				BorderForeground(bufBlue)
 			fileView = fileViewStyle.Render(fileView)
 		}
-		return lipgloss.JoinVertical(
+		view = lipgloss.JoinVertical(
 			lipgloss.Left,
 			fmt.Sprintf("Commit %s (Module: %s/%s)\n", m.currentCommit, m.moduleOwner, m.currentModule),
 			lipgloss.JoinHorizontal(
@@ -390,9 +481,12 @@ func (m model) View() string {
 		)
 	case modelStateSearching:
 		header := "Search for an owner (user or organization)"
-		return header + "\n\n" + m.searchInput.View()
+		view = header + "\n\n" + m.searchInput.View()
+	default:
+		return fmt.Sprintf("unaccounted state: %v", m.state)
 	}
-	return fmt.Sprintf("unaccounted state: %v", m.state)
+	view += "\n\n" + m.help.View(m)
+	return view
 }
 
 type modulesMsg []*modulev1beta1.Module
