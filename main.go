@@ -265,6 +265,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.noOwnerModules = false
 		columns := []table.Column{
 			// TODO: adjust these dynamically?
+			// NOTE: It seems like module.{Description,Url} are not
+			// currently widely populated; leaving those out
+			// deliberately.
 			{Title: "ID", Width: 12},
 			{Title: "Name", Width: 20},
 			{Title: "Create Time", Width: 19},
