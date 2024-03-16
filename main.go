@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/base64"
-	"flag"
 	"fmt"
 	"os"
 	"os/user"
@@ -25,6 +24,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/jdx/go-netrc"
 	"github.com/peterbourgon/ff/v4"
+	"github.com/peterbourgon/ff/v4/ffhelp"
 )
 
 // TODO:
@@ -180,15 +180,15 @@ func main() {
 }
 
 func run(_ context.Context) error {
-	fs := flag.NewFlagSet("buftui", flag.ContinueOnError)
+	fs := ff.NewFlagSet("buftui")
 	var (
-		hostFlag       = fs.String("host", "buf.build", "host")
-		userFlag       = fs.String("user", "", "user")
-		fullscreenFlag = fs.Bool("fullscreen", false, "Enable fullscreen display")
+		hostFlag       = fs.String('r', "registry", "buf.build", "BSR registry")
+		fullscreenFlag = fs.Bool('f', "fullscreen", "Enable fullscreen display")
 	)
 
 	if err := ff.Parse(fs, os.Args[1:]); err != nil {
-		return fmt.Errorf("parsing flags: %w", err)
+		fmt.Printf("%s\n", ffhelp.Flags(fs))
+		return err
 	}
 
 	usr, err := user.Current()
@@ -203,9 +203,6 @@ func run(_ context.Context) error {
 	login := n.Machine(*hostFlag).Get("login")
 	token := n.Machine(*hostFlag).Get("password")
 	moduleOwner := login
-	if *userFlag != "" {
-		moduleOwner = *userFlag
-	}
 
 	tableStyles := table.DefaultStyles()
 	tableStyles.Header = tableStyles.Header.
