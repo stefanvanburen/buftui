@@ -127,7 +127,7 @@ func (m model) ShortHelp() []key.Binding {
 func (m model) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		m.ShortHelp(),
-		{keys.Help, keys.Quit},
+		{keys.Search, keys.Help, keys.Quit},
 	}
 }
 
