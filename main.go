@@ -98,30 +98,34 @@ type keyMap struct {
 }
 
 func (m model) ShortHelp() []key.Binding {
+	var shortHelp []key.Binding
 	switch m.state {
 	case modelStateBrowsingModules:
 		// Can't go Left while browsing modules; already at the "top".
 		if m.noOwnerModules {
 			// Can't go Right when no modules exist.
-			return []key.Binding{keys.Up, keys.Down}
+			shortHelp = []key.Binding{keys.Up, keys.Down}
 		} else {
-			return []key.Binding{keys.Up, keys.Down, keys.Right}
+			shortHelp = []key.Binding{keys.Up, keys.Down, keys.Right}
 		}
 	case modelStateBrowsingCommits, modelStateBrowsingCommitContents:
 		if m.noModuleCommits {
 			// Can't go Right when no commits exist.
-			return []key.Binding{keys.Up, keys.Down, keys.Left}
+			shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left}
 		} else {
-			return []key.Binding{keys.Up, keys.Down, keys.Right, keys.Left}
+			shortHelp = []key.Binding{keys.Up, keys.Down, keys.Right, keys.Left}
 		}
 	case modelStateBrowsingCommitFileContents:
 		// Can't go Right while browsing file contents; already at the "bottom".
-		return []key.Binding{keys.Up, keys.Down, keys.Left}
+		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left}
 	case modelStateSearching:
-		return []key.Binding{keys.Enter}
+		shortHelp = []key.Binding{keys.Enter}
 	default:
+		// In the other states, just show Help and Quit.
 		return []key.Binding{keys.Help, keys.Quit}
 	}
+	// Always show the Help key.
+	return append(shortHelp, keys.Help)
 }
 
 func (m model) FullHelp() [][]key.Binding {
