@@ -54,7 +54,9 @@ type model struct {
 	// TODO: Share a single table and just hold on to the messages and
 	// re-render?
 	moduleTable        table.Model
+	noOwnerModules     bool
 	commitsTable       table.Model
+	noModuleCommits    bool
 	commitFilesTable   table.Model
 	currentModule      string
 	currentCommit      string
@@ -99,9 +101,19 @@ func (m model) ShortHelp() []key.Binding {
 	switch m.state {
 	case modelStateBrowsingModules:
 		// Can't go Left while browsing modules; already at the "top".
-		return []key.Binding{keys.Up, keys.Down, keys.Right}
+		if m.noOwnerModules {
+			// Can't go Right when no modules exist.
+			return []key.Binding{keys.Up, keys.Down}
+		} else {
+			return []key.Binding{keys.Up, keys.Down, keys.Right}
+		}
 	case modelStateBrowsingCommits, modelStateBrowsingCommitContents:
-		return []key.Binding{keys.Right, keys.Left}
+		if m.noModuleCommits {
+			// Can't go Right when no commits exist.
+			return []key.Binding{keys.Up, keys.Down, keys.Left}
+		} else {
+			return []key.Binding{keys.Up, keys.Down, keys.Right, keys.Left}
+		}
 	case modelStateBrowsingCommitFileContents:
 		// Can't go Right while browsing file contents; already at the "bottom".
 		return []key.Binding{keys.Up, keys.Down, keys.Left}
@@ -240,6 +252,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.help.Width = msg.Width
 
 	case modulesMsg:
+		m.state = modelStateBrowsingModules
+		if len(msg) == 0 {
+			m.noOwnerModules = true
+			return m, nil
+		}
+		// Reset.
+		m.noOwnerModules = false
 		columns := []table.Column{
 			// TODO: adjust these dynamically?
 			{Title: "ID", Width: 12},
@@ -248,29 +267,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			{Title: "Visibility", Width: 10},
 		}
 		tableHeight := len(msg)
-		var rows []table.Row
-		if len(msg) == 0 {
-			rows = append(rows, table.Row{
-				"No modules found for user",
-			})
-			tableHeight = 1
-		} else {
-			for _, module := range msg {
-				var visibility string
-				switch module.Visibility {
-				case modulev1beta1.ModuleVisibility_MODULE_VISIBILITY_PRIVATE:
-					visibility = "private"
-				case modulev1beta1.ModuleVisibility_MODULE_VISIBILITY_PUBLIC:
-					visibility = "public"
-				default:
-					visibility = "unknown"
-				}
-				rows = append(rows, table.Row{
-					module.Id,
-					module.Name,
-					module.CreateTime.AsTime().Format(time.DateTime),
-					visibility,
-				})
+		rows := make([]table.Row, len(msg))
+		for i, module := range msg {
+			var visibility string
+			switch module.Visibility {
+			case modulev1beta1.ModuleVisibility_MODULE_VISIBILITY_PRIVATE:
+				visibility = "private"
+			case modulev1beta1.ModuleVisibility_MODULE_VISIBILITY_PUBLIC:
+				visibility = "public"
+			default:
+				visibility = "unknown"
+			}
+			rows[i] = table.Row{
+				module.Id,
+				module.Name,
+				module.CreateTime.AsTime().Format(time.DateTime),
+				visibility,
 			}
 		}
 		m.moduleTable = table.New(
@@ -280,10 +292,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			table.WithHeight(tableHeight),
 			table.WithStyles(m.tableStyles),
 		)
-		m.state = modelStateBrowsingModules
 		return m, nil
 
 	case commitsMsg:
+		m.state = modelStateBrowsingCommits
+		if len(msg) == 0 {
+			m.noModuleCommits = true
+			return m, nil
+		}
+		// Reset.
+		m.noModuleCommits = false
+
 		columns := []table.Column{
 			// TODO: adjust these dynamically?
 			{Title: "ID", Width: 12},
@@ -292,30 +311,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			{Title: "Digest", Width: 19},
 			// TODO: What else is useful here?
 		}
-		tableHeight := len(msg)
-		var rows []table.Row
-		if len(msg) == 0 {
-			rows = append(rows, table.Row{
-				"No commits found for module",
-			})
-			tableHeight = 1
-		} else {
-			for _, commit := range msg {
-				rows = append(rows, table.Row{
-					commit.Id,
-					commit.CreateTime.AsTime().Format(time.DateTime),
-					fmt.Sprintf("%s:%s", commit.Digest.Type.String(), commit.Digest.Value),
-				})
+		rows := make([]table.Row, len(msg))
+		for i, commit := range msg {
+			rows[i] = table.Row{
+				commit.Id,
+				commit.CreateTime.AsTime().Format(time.DateTime),
+				fmt.Sprintf("%s:%s", commit.Digest.Type.String(), commit.Digest.Value),
 			}
 		}
 		m.commitsTable = table.New(
 			table.WithColumns(columns),
 			table.WithRows(rows),
 			table.WithFocused(true),
-			table.WithHeight(tableHeight),
+			table.WithHeight(len(msg)),
 			table.WithStyles(m.tableStyles),
 		)
-		m.state = modelStateBrowsingCommits
 		return m, nil
 
 	case contentsMsg:
@@ -396,10 +406,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Right):
 			switch m.state {
 			case modelStateBrowsingModules:
+				if m.noOwnerModules {
+					// Don't do anything.
+					return m, nil
+				}
 				m.state = modelStateLoadingCommits
 				m.currentModule = m.moduleTable.SelectedRow()[1] // module name row
 				return m, m.getCommits()
 			case modelStateBrowsingCommits:
+				if m.noModuleCommits {
+					// Don't do anything.
+					return m, nil
+				}
 				m.state = modelStateLoadingCommitContents
 				m.currentCommit = m.commitsTable.SelectedRow()[0] // commit name row
 				return m, m.getCommitContent(m.currentCommit)
@@ -455,11 +473,23 @@ func (m model) View() string {
 	case modelStateLoadingModules:
 		view = m.spinner.View()
 	case modelStateBrowsingModules:
-		view = fmt.Sprintf("Modules (Owner: %s)\n", m.moduleOwner) + m.moduleTable.View()
+		header := fmt.Sprintf("Modules (Owner: %s)\n", m.moduleOwner)
+		view = header
+		if m.noOwnerModules {
+			view += fmt.Sprintf("No modules found for owner; use %s to search for another owner", keys.Search.Keys())
+		} else {
+			view += m.moduleTable.View()
+		}
 	case modelStateLoadingCommits:
 		view = m.spinner.View()
 	case modelStateBrowsingCommits:
-		view = fmt.Sprintf("Commits (Module: %s/%s)\n", m.moduleOwner, m.currentModule) + m.commitsTable.View()
+		header := fmt.Sprintf("Commits (Module: %s/%s)\n", m.moduleOwner, m.currentModule)
+		view = header
+		if m.noModuleCommits {
+			view += "No commits found for module"
+		} else {
+			view += m.commitsTable.View()
+		}
 	case modelStateLoadingCommitContents:
 		view = m.spinner.View()
 	case modelStateBrowsingCommitContents, modelStateBrowsingCommitFileContents:
