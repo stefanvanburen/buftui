@@ -269,6 +269,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			{Title: "Name", Width: 20},
 			{Title: "Create Time", Width: 19},
 			{Title: "Visibility", Width: 10},
+			{Title: "State", Width: 10},
 		}
 		tableHeight := len(msg)
 		rows := make([]table.Row, len(msg))
@@ -282,11 +283,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			default:
 				visibility = "unknown"
 			}
+			var state string
+			switch module.State {
+			case modulev1beta1.ModuleState_MODULE_STATE_ACTIVE:
+				state = "active"
+			case modulev1beta1.ModuleState_MODULE_STATE_DEPRECATED:
+				state = "deprecated"
+			default:
+				state = "unknown"
+			}
 			rows[i] = table.Row{
 				module.Id,
 				module.Name,
 				module.CreateTime.AsTime().Format(time.DateTime),
 				visibility,
+				state,
 			}
 		}
 		m.moduleTable = table.New(
