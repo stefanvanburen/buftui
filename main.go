@@ -427,7 +427,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.state = modelStateLoadingCommits
 				m.currentModule = m.moduleTable.SelectedRow()[1] // module name row
-				return m, m.getCommits()
+				return m, m.listCommits()
 			case modelStateBrowsingCommits:
 				if m.noModuleCommits {
 					// Don't do anything.
@@ -565,23 +565,18 @@ func (m model) getModules() tea.Cmd {
 
 type commitsMsg []*modulev1beta1.Commit
 
-func (m model) getCommits() tea.Cmd {
+func (m model) listCommits() tea.Cmd {
 	return func() tea.Msg {
 		commitServiceClient := modulev1beta1connect.NewCommitServiceClient(
 			m.httpClient,
 			fmt.Sprintf("https://%s", m.hostname),
 		)
-		// TODO: This only supports getting a single commit per
-		// reference; we ideally want a list of commits.
-		// Change this to `ListCommits`, once it's implemented.
-		req := connect.NewRequest(&modulev1beta1.GetCommitsRequest{
-			ResourceRefs: []*modulev1beta1.ResourceRef{
-				{
-					Value: &modulev1beta1.ResourceRef_Name_{
-						Name: &modulev1beta1.ResourceRef_Name{
-							Owner:  m.moduleOwner,
-							Module: m.currentModule,
-						},
+		req := connect.NewRequest(&modulev1beta1.ListCommitsRequest{
+			ResourceRef: &modulev1beta1.ResourceRef{
+				Value: &modulev1beta1.ResourceRef_Name_{
+					Name: &modulev1beta1.ResourceRef_Name{
+						Owner:  m.moduleOwner,
+						Module: m.currentModule,
 					},
 				},
 			},
@@ -590,7 +585,7 @@ func (m model) getCommits() tea.Cmd {
 			"Authorization",
 			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", m.login, m.token))),
 		)
-		resp, err := commitServiceClient.GetCommits(context.Background(), req)
+		resp, err := commitServiceClient.ListCommits(context.Background(), req)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting commits: %s", err)}
 		}
