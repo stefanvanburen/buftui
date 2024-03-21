@@ -5,7 +5,7 @@ go 1.22.0
 require (
 	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.15.0-20240311192602-4350a0ecc53b.1
 	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.32.0-20240311192602-4350a0ecc53b.1
-	connectrpc.com/connect v1.15.0
+	connectrpc.com/connect v1.16.0
 	github.com/bufbuild/httplb v0.1.0
 	github.com/charmbracelet/bubbles v0.18.0
 	github.com/charmbracelet/bubbletea v0.25.0
@@ -33,5 +33,5 @@ require (
 	golang.org/x/sys v0.17.0 // indirect
 	golang.org/x/term v0.17.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
-	google.golang.org/protobuf v1.32.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
 )
