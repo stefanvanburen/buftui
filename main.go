@@ -602,8 +602,6 @@ type contentsMsg *modulev1beta1.DownloadResponse_Content
 
 func (m model) getCommitContent(commitName string) tea.Cmd {
 	return func() tea.Msg {
-		client := httplb.NewClient()
-		defer client.Close()
 		commitServiceClient := modulev1beta1connect.NewDownloadServiceClient(
 			m.httpClient,
 			fmt.Sprintf("https://%s", m.hostname),
