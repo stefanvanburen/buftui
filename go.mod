@@ -4,7 +4,7 @@ go 1.22.0
 
 require (
 	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.15.0-20240311192602-4350a0ecc53b.1
-	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.32.0-20240311192602-4350a0ecc53b.1
+	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.33.0-20240319001036-1c87dc9555ae.1
 	connectrpc.com/connect v1.15.0
 	github.com/bufbuild/httplb v0.1.0
 	github.com/charmbracelet/bubbles v0.18.0
@@ -15,7 +15,7 @@ require (
 )
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.32.0-20240221180331-f05a6f4403ce.1 // indirect
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.33.0-20240221180331-f05a6f4403ce.1 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/containerd/console v1.0.4-0.20230313162750-1ae8d489ac81 // indirect
@@ -33,5 +33,5 @@ require (
 	golang.org/x/sys v0.17.0 // indirect
 	golang.org/x/term v0.17.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
-	google.golang.org/protobuf v1.32.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
 )
