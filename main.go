@@ -585,8 +585,6 @@ func (m model) getCommits() tea.Cmd {
 					},
 				},
 			},
-			// TODO: Switch to B5 when supported.
-			DigestType: modulev1beta1.DigestType_DIGEST_TYPE_B4,
 		})
 		req.Header().Set(
 			"Authorization",
@@ -626,7 +624,6 @@ func (m model) getCommitContent(commitName string) tea.Cmd {
 					},
 				},
 			},
-			DigestType: modulev1beta1.DigestType_DIGEST_TYPE_B4,
 		})
 		req.Header().Set(
 			"Authorization",
