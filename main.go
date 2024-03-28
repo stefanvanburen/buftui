@@ -324,25 +324,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			{Title: "Create Time", Width: 19},
 			// No need to make this too long - it's not really
 			// useful to consumers.
-			// 2 "<type>" + 1 ":" + 6 starting characters
-			{Title: "Digest", Width: 9},
+			{Title: "B5 Digest", Width: 9},
 			// TODO: What else is useful here?
 		}
 		rows := make([]table.Row, len(msg))
 		for i, commit := range msg {
-			var digestType string
-			switch commit.Digest.Type {
-			case modulev1beta1.DigestType_DIGEST_TYPE_B4:
-				digestType = "b4"
-			case modulev1beta1.DigestType_DIGEST_TYPE_B5:
-				digestType = "b5"
-			default:
-				digestType = "??"
-			}
 			rows[i] = table.Row{
 				commit.Id,
 				commit.CreateTime.AsTime().Format(time.DateTime),
-				fmt.Sprintf("%s:%x", digestType, commit.Digest.Value),
+				fmt.Sprintf("%x", commit.Digest.Value),
 			}
 		}
 		m.commitsTable = table.New(
