@@ -324,7 +324,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			{Title: "Create Time", Width: 19},
 			// No need to make this too long - it's not really
 			// useful to consumers.
-			{Title: "B5 Digest", Width: 9},
+			{Title: "b5 Digest", Width: 9},
 			// TODO: What else is useful here?
 		}
 		rows := make([]table.Row, len(msg))
