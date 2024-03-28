@@ -541,7 +541,7 @@ func (m model) getModules() tea.Cmd {
 	return func() tea.Msg {
 		moduleServiceClient := modulev1beta1connect.NewModuleServiceClient(
 			m.httpClient,
-			fmt.Sprintf("https://%s", m.hostname),
+			"https://"+m.hostname,
 		)
 		req := connect.NewRequest(&modulev1beta1.ListModulesRequest{
 			OwnerRefs: []*ownerv1.OwnerRef{
@@ -570,7 +570,7 @@ func (m model) listCommits() tea.Cmd {
 	return func() tea.Msg {
 		commitServiceClient := modulev1beta1connect.NewCommitServiceClient(
 			m.httpClient,
-			fmt.Sprintf("https://%s", m.hostname),
+			"https://"+m.hostname,
 		)
 		req := connect.NewRequest(&modulev1beta1.ListCommitsRequest{
 			ResourceRef: &modulev1beta1.ResourceRef{
@@ -600,7 +600,7 @@ func (m model) getCommitContent(commitName string) tea.Cmd {
 	return func() tea.Msg {
 		commitServiceClient := modulev1beta1connect.NewDownloadServiceClient(
 			m.httpClient,
-			fmt.Sprintf("https://%s", m.hostname),
+			"https://"+m.hostname,
 		)
 		req := connect.NewRequest(&modulev1beta1.DownloadRequest{
 			Values: []*modulev1beta1.DownloadRequest_Value{
