@@ -1,9 +1,9 @@
 # buftui
 
-A TUI for buf.
+A TUI for the [Buf Schema Registry](https://buf.build).
 
 ## Usage
 
-```
+```shell
 go run github.com/stefanvanburen/buftui@latest
 ```
