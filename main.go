@@ -27,12 +27,6 @@ import (
 	"github.com/peterbourgon/ff/v4/ffhelp"
 )
 
-// TODO:
-// * search for user / organization
-// * module view
-// * commit view
-// * docs view?
-
 type modelState string
 
 const (
@@ -552,7 +546,7 @@ func (m model) getModules() tea.Cmd {
 			m.httpClient,
 			"https://"+m.registryHostname,
 		)
-		req := connect.NewRequest(&modulev1beta1.ListModulesRequest{
+		request := connect.NewRequest(&modulev1beta1.ListModulesRequest{
 			OwnerRefs: []*ownerv1.OwnerRef{
 				{
 					Value: &ownerv1.OwnerRef_Name{
@@ -561,15 +555,12 @@ func (m model) getModules() tea.Cmd {
 				},
 			},
 		})
-		req.Header().Set(
-			"Authorization",
-			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", m.username, m.token))),
-		)
-		resp, err := moduleServiceClient.ListModules(context.Background(), req)
+		setBasicAuthHeader(request, m.username, m.token)
+		response, err := moduleServiceClient.ListModules(context.Background(), request)
 		if err != nil {
 			return errMsg{fmt.Errorf("listing modules: %s", err)}
 		}
-		return modulesMsg(resp.Msg.Modules)
+		return modulesMsg(response.Msg.Modules)
 	}
 }
 
@@ -581,7 +572,7 @@ func (m model) listCommits() tea.Cmd {
 			m.httpClient,
 			"https://"+m.registryHostname,
 		)
-		req := connect.NewRequest(&modulev1beta1.ListCommitsRequest{
+		request := connect.NewRequest(&modulev1beta1.ListCommitsRequest{
 			ResourceRef: &modulev1beta1.ResourceRef{
 				Value: &modulev1beta1.ResourceRef_Name_{
 					Name: &modulev1beta1.ResourceRef_Name{
@@ -591,15 +582,12 @@ func (m model) listCommits() tea.Cmd {
 				},
 			},
 		})
-		req.Header().Set(
-			"Authorization",
-			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", m.username, m.token))),
-		)
-		resp, err := commitServiceClient.ListCommits(context.Background(), req)
+		setBasicAuthHeader(request, m.username, m.token)
+		response, err := commitServiceClient.ListCommits(context.Background(), request)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting commits: %s", err)}
 		}
-		return commitsMsg(resp.Msg.Commits)
+		return commitsMsg(response.Msg.Commits)
 	}
 }
 
@@ -611,7 +599,7 @@ func (m model) getCommitContent(commitName string) tea.Cmd {
 			m.httpClient,
 			"https://"+m.registryHostname,
 		)
-		req := connect.NewRequest(&modulev1beta1.DownloadRequest{
+		request := connect.NewRequest(&modulev1beta1.DownloadRequest{
 			Values: []*modulev1beta1.DownloadRequest_Value{
 				{
 					ResourceRef: &modulev1beta1.ResourceRef{
@@ -628,19 +616,23 @@ func (m model) getCommitContent(commitName string) tea.Cmd {
 				},
 			},
 		})
-		req.Header().Set(
-			"Authorization",
-			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", m.username, m.token))),
-		)
-		resp, err := commitServiceClient.Download(context.Background(), req)
+		setBasicAuthHeader(request, m.username, m.token)
+		response, err := commitServiceClient.Download(context.Background(), request)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting commit content: %s", err)}
 		}
-		if len(resp.Msg.Contents) != 1 {
-			return errMsg{fmt.Errorf("requested 1 commit contents, got %v", len(resp.Msg.Contents))}
+		if len(response.Msg.Contents) != 1 {
+			return errMsg{fmt.Errorf("requested 1 commit contents, got %v", len(response.Msg.Contents))}
 		}
-		return contentsMsg(resp.Msg.Contents[0])
+		return contentsMsg(response.Msg.Contents[0])
 	}
+}
+
+func setBasicAuthHeader(request connect.AnyRequest, username, token string) {
+	request.Header().Set(
+		"Authorization",
+		"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", username, token))),
+	)
 }
 
 type errMsg struct{ err error }
