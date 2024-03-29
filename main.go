@@ -67,10 +67,10 @@ type model struct {
 
 	keys keyMap
 
-	hostname    string
-	login       string
-	token       string
-	moduleOwner string
+	registryHostname string
+	username         string
+	token            string
+	moduleOwner      string
 
 	err error
 
@@ -182,27 +182,36 @@ func main() {
 func run(_ context.Context) error {
 	fs := ff.NewFlagSet("buftui")
 	var (
-		hostFlag       = fs.String('r', "registry", "buf.build", "BSR registry")
+		registryFlag   = fs.String('r', "registry", "buf.build", "BSR registry hostname")
 		fullscreenFlag = fs.Bool('f', "fullscreen", "Enable fullscreen display")
+		usernameFlag   = fs.String('u', "username", "", "Set username for authentication (default: login for registry hostname in ~/.netrc)")
+		tokenFlag      = fs.String('t', "token", "", "Set token for authentication (default: password for registry hostname in ~/.netrc)")
 	)
-
 	if err := ff.Parse(fs, os.Args[1:]); err != nil {
 		fmt.Printf("%s\n", ffhelp.Flags(fs))
 		return err
 	}
 
-	usr, err := user.Current()
-	if err != nil {
-		return fmt.Errorf("getting current user: %s", err)
+	username := *usernameFlag
+	token := *tokenFlag
+
+	// Either username && token should be provided at the CLI, or they should be loaded from the ~/.netrc.
+	if (username == "" && token != "") || (username != "" && token == "") {
+		return fmt.Errorf("must set both username and token flags, or neither (and load authentication from ~/.netrc)")
 	}
-	n, err := netrc.Parse(filepath.Join(usr.HomeDir, ".netrc"))
-	if err != nil {
-		return fmt.Errorf("parsing netrc: %s", err)
+	if username == "" && token == "" {
+		var err error
+		username, token, err = getUserTokenFromNetrc(*registryFlag)
+		if err != nil {
+			return fmt.Errorf("getting netrc credentials: %w", err)
+		}
 	}
-	// TODO: What should we do with neither set, or just one set?
-	login := n.Machine(*hostFlag).Get("login")
-	token := n.Machine(*hostFlag).Get("password")
-	moduleOwner := login
+	if username == "" {
+		return fmt.Errorf("username must be set, either by flag or in the ~/.netrc file")
+	}
+	if token == "" {
+		return fmt.Errorf("token must be set, either by flag or in the ~/.netrc file")
+	}
 
 	tableStyles := table.DefaultStyles()
 	tableStyles.Header = tableStyles.Header.
@@ -219,16 +228,16 @@ func run(_ context.Context) error {
 	defer httpClient.Close()
 
 	model := model{
-		state:       modelStateLoadingModules,
-		hostname:    *hostFlag,
-		login:       login,
-		token:       token,
-		moduleOwner: moduleOwner,
-		spinner:     spinner.New(),
-		tableStyles: tableStyles,
-		httpClient:  httpClient,
-		help:        help.New(),
-		keys:        keys,
+		state:            modelStateLoadingModules,
+		registryHostname: *registryFlag,
+		username:         username,
+		token:            token,
+		moduleOwner:      username,
+		spinner:          spinner.New(),
+		tableStyles:      tableStyles,
+		httpClient:       httpClient,
+		help:             help.New(),
+		keys:             keys,
 	}
 
 	var options []tea.ProgramOption
@@ -541,7 +550,7 @@ func (m model) getModules() tea.Cmd {
 	return func() tea.Msg {
 		moduleServiceClient := modulev1beta1connect.NewModuleServiceClient(
 			m.httpClient,
-			"https://"+m.hostname,
+			"https://"+m.registryHostname,
 		)
 		req := connect.NewRequest(&modulev1beta1.ListModulesRequest{
 			OwnerRefs: []*ownerv1.OwnerRef{
@@ -554,7 +563,7 @@ func (m model) getModules() tea.Cmd {
 		})
 		req.Header().Set(
 			"Authorization",
-			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", m.login, m.token))),
+			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", m.username, m.token))),
 		)
 		resp, err := moduleServiceClient.ListModules(context.Background(), req)
 		if err != nil {
@@ -570,7 +579,7 @@ func (m model) listCommits() tea.Cmd {
 	return func() tea.Msg {
 		commitServiceClient := modulev1beta1connect.NewCommitServiceClient(
 			m.httpClient,
-			"https://"+m.hostname,
+			"https://"+m.registryHostname,
 		)
 		req := connect.NewRequest(&modulev1beta1.ListCommitsRequest{
 			ResourceRef: &modulev1beta1.ResourceRef{
@@ -584,7 +593,7 @@ func (m model) listCommits() tea.Cmd {
 		})
 		req.Header().Set(
 			"Authorization",
-			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", m.login, m.token))),
+			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", m.username, m.token))),
 		)
 		resp, err := commitServiceClient.ListCommits(context.Background(), req)
 		if err != nil {
@@ -600,7 +609,7 @@ func (m model) getCommitContent(commitName string) tea.Cmd {
 	return func() tea.Msg {
 		commitServiceClient := modulev1beta1connect.NewDownloadServiceClient(
 			m.httpClient,
-			"https://"+m.hostname,
+			"https://"+m.registryHostname,
 		)
 		req := connect.NewRequest(&modulev1beta1.DownloadRequest{
 			Values: []*modulev1beta1.DownloadRequest_Value{
@@ -621,7 +630,7 @@ func (m model) getCommitContent(commitName string) tea.Cmd {
 		})
 		req.Header().Set(
 			"Authorization",
-			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", m.login, m.token))),
+			"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", m.username, m.token))),
 		)
 		resp, err := commitServiceClient.Download(context.Background(), req)
 		if err != nil {
@@ -639,3 +648,24 @@ type errMsg struct{ err error }
 // For messages that contain errors it's often handy to also implement the
 // error interface on the message.
 func (e errMsg) Error() string { return e.err.Error() }
+
+// getUserTokenFromNetrc returns the username and token for the hostname in the
+// ~/.netrc file, if it exists.
+func getUserTokenFromNetrc(hostname string) (username string, token string, err error) {
+	currentUser, err := user.Current()
+	if err != nil {
+		return "", "", fmt.Errorf("getting current user: %s", err)
+	}
+	netrcPath := filepath.Join(currentUser.HomeDir, ".netrc")
+	// Give up if we can't stat the netrcPath.
+	if _, err := os.Stat(netrcPath); err != nil {
+		return "", "", nil
+	}
+	parsedNetrc, err := netrc.Parse(netrcPath)
+	if err != nil {
+		return "", "", fmt.Errorf("parsing netrc: %s", err)
+	}
+	username = parsedNetrc.Machine(hostname).Get("login")
+	token = parsedNetrc.Machine(hostname).Get("password")
+	return username, token, nil
+}
