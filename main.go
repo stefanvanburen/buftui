@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/module/v1beta1/modulev1beta1connect"
-	modulev1beta1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1beta1"
+	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/module/v1/modulev1connect"
+	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
 	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
 	"connectrpc.com/connect"
 	"github.com/bufbuild/httplb"
@@ -54,7 +54,7 @@ type model struct {
 	commitFilesTable   table.Model
 	currentModule      string
 	currentCommit      string
-	currentCommitFiles []*modulev1beta1.File
+	currentCommitFiles []*modulev1.File
 	fileViewport       viewport.Model
 	searchInput        textinput.Model
 	help               help.Model
@@ -279,18 +279,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, module := range msg {
 			var visibility string
 			switch module.Visibility {
-			case modulev1beta1.ModuleVisibility_MODULE_VISIBILITY_PRIVATE:
+			case modulev1.ModuleVisibility_MODULE_VISIBILITY_PRIVATE:
 				visibility = "private"
-			case modulev1beta1.ModuleVisibility_MODULE_VISIBILITY_PUBLIC:
+			case modulev1.ModuleVisibility_MODULE_VISIBILITY_PUBLIC:
 				visibility = "public"
 			default:
 				visibility = "unknown"
 			}
 			var state string
 			switch module.State {
-			case modulev1beta1.ModuleState_MODULE_STATE_ACTIVE:
+			case modulev1.ModuleState_MODULE_STATE_ACTIVE:
 				state = "active"
-			case modulev1beta1.ModuleState_MODULE_STATE_DEPRECATED:
+			case modulev1.ModuleState_MODULE_STATE_DEPRECATED:
 				state = "deprecated"
 			default:
 				state = "unknown"
@@ -538,15 +538,15 @@ func (m model) View() string {
 	return view
 }
 
-type modulesMsg []*modulev1beta1.Module
+type modulesMsg []*modulev1.Module
 
 func (m model) getModules() tea.Cmd {
 	return func() tea.Msg {
-		moduleServiceClient := modulev1beta1connect.NewModuleServiceClient(
+		moduleServiceClient := modulev1connect.NewModuleServiceClient(
 			m.httpClient,
 			"https://"+m.registryHostname,
 		)
-		request := connect.NewRequest(&modulev1beta1.ListModulesRequest{
+		request := connect.NewRequest(&modulev1.ListModulesRequest{
 			OwnerRefs: []*ownerv1.OwnerRef{
 				{
 					Value: &ownerv1.OwnerRef_Name{
@@ -564,18 +564,18 @@ func (m model) getModules() tea.Cmd {
 	}
 }
 
-type commitsMsg []*modulev1beta1.Commit
+type commitsMsg []*modulev1.Commit
 
 func (m model) listCommits() tea.Cmd {
 	return func() tea.Msg {
-		commitServiceClient := modulev1beta1connect.NewCommitServiceClient(
+		commitServiceClient := modulev1connect.NewCommitServiceClient(
 			m.httpClient,
 			"https://"+m.registryHostname,
 		)
-		request := connect.NewRequest(&modulev1beta1.ListCommitsRequest{
-			ResourceRef: &modulev1beta1.ResourceRef{
-				Value: &modulev1beta1.ResourceRef_Name_{
-					Name: &modulev1beta1.ResourceRef_Name{
+		request := connect.NewRequest(&modulev1.ListCommitsRequest{
+			ResourceRef: &modulev1.ResourceRef{
+				Value: &modulev1.ResourceRef_Name_{
+					Name: &modulev1.ResourceRef_Name{
 						Owner:  m.moduleOwner,
 						Module: m.currentModule,
 					},
@@ -591,23 +591,23 @@ func (m model) listCommits() tea.Cmd {
 	}
 }
 
-type contentsMsg *modulev1beta1.DownloadResponse_Content
+type contentsMsg *modulev1.DownloadResponse_Content
 
 func (m model) getCommitContent(commitName string) tea.Cmd {
 	return func() tea.Msg {
-		commitServiceClient := modulev1beta1connect.NewDownloadServiceClient(
+		commitServiceClient := modulev1connect.NewDownloadServiceClient(
 			m.httpClient,
 			"https://"+m.registryHostname,
 		)
-		request := connect.NewRequest(&modulev1beta1.DownloadRequest{
-			Values: []*modulev1beta1.DownloadRequest_Value{
+		request := connect.NewRequest(&modulev1.DownloadRequest{
+			Values: []*modulev1.DownloadRequest_Value{
 				{
-					ResourceRef: &modulev1beta1.ResourceRef{
-						Value: &modulev1beta1.ResourceRef_Name_{
-							Name: &modulev1beta1.ResourceRef_Name{
+					ResourceRef: &modulev1.ResourceRef{
+						Value: &modulev1.ResourceRef_Name_{
+							Name: &modulev1.ResourceRef_Name{
 								Owner:  m.moduleOwner,
 								Module: m.currentModule,
-								Child: &modulev1beta1.ResourceRef_Name_Ref{
+								Child: &modulev1.ResourceRef_Name_Ref{
 									Ref: commitName,
 								},
 							},
