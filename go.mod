@@ -4,7 +4,7 @@ go 1.22.0
 
 require (
 	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.16.0-20240319001036-1c87dc9555ae.1
-	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.33.0-20240319001036-1c87dc9555ae.1
+	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.33.0-20240327205414-2f1854093b57.1
 	connectrpc.com/connect v1.16.0
 	github.com/bufbuild/httplb v0.1.0
 	github.com/charmbracelet/bubbles v0.18.0
