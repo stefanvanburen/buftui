@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -13,6 +14,9 @@ import (
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
 	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
 	"connectrpc.com/connect"
+	"github.com/alecthomas/chroma/v2/formatters"
+	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/bufbuild/httplb"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -470,11 +474,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commitsTable, cmd = m.commitsTable.Update(msg)
 	case modelStateBrowsingCommitContents:
 		m.commitFilesTable, cmd = m.commitFilesTable.Update(msg)
-		for _, file := range m.currentCommitFiles {
-			if file.Path == m.commitFilesTable.SelectedRow()[0] {
-				m.fileViewport.SetContent(string(file.Content))
-			}
-		}
 	case modelStateBrowsingCommitFileContents:
 		m.fileViewport, cmd = m.fileViewport.Update(msg)
 	case modelStateSearching:
@@ -512,6 +511,20 @@ func (m model) View() string {
 	case modelStateLoadingCommitContents:
 		view = m.spinner.View()
 	case modelStateBrowsingCommitContents, modelStateBrowsingCommitFileContents:
+		selectedFileName := m.commitFilesTable.SelectedRow()[0]
+		var fileContents string
+		for _, file := range m.currentCommitFiles {
+			if file.Path == selectedFileName {
+				fileContents = string(file.Content)
+				break
+			}
+		}
+		highlightedFile, err := highlightFile(selectedFileName, fileContents)
+		if err != nil {
+			// TODO: Log and use the unhighlighted file contents?
+			return fmt.Sprintf("highlighting selected file %s: %s", selectedFileName, err)
+		}
+		m.fileViewport.SetContent(highlightedFile)
 		fileView := m.fileViewport.View()
 		if m.state == modelStateBrowsingCommitFileContents {
 			fileViewStyle := lipgloss.NewStyle().
@@ -660,4 +673,39 @@ func getUserTokenFromNetrc(hostname string) (username string, token string, err 
 	username = parsedNetrc.Machine(hostname).Get("login")
 	token = parsedNetrc.Machine(hostname).Get("password")
 	return username, token, nil
+}
+
+func highlightFile(filename, fileContents string) (string, error) {
+	// TODO: There are only a few filetypes that can actually exist in a module:
+	// - Licenses
+	// - README (markdown/text(?))
+	// - protobuf
+	lexer := lexers.Match(filename)
+	if lexer == nil {
+		// This happens for LICENSE files.
+		lexer = lexers.Fallback
+	}
+	// TODO: Make this configurable?
+	// Probably not ;)
+	style := styles.Get("algol_nu")
+	if style == nil {
+		style = styles.Fallback
+	}
+	// TODO: This seemingly works on my terminal, but we may need
+	// to select a different one based on terminal type.
+	// I think we should be able to figure that out from
+	// tea/termenv, somehow.
+	formatter := formatters.TTY256
+	if formatter == nil {
+		formatter = formatters.Fallback
+	}
+	iterator, err := lexer.Tokenise(nil, fileContents)
+	if err != nil {
+		return "", fmt.Errorf("tokenizing file: %w", err)
+	}
+	var buffer bytes.Buffer
+	if err := formatter.Format(&buffer, style, iterator); err != nil {
+		return "", fmt.Errorf("formatting file: %w", err)
+	}
+	return buffer.String(), nil
 }
