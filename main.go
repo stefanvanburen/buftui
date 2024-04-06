@@ -82,6 +82,8 @@ type model struct {
 const (
 	bufBlue = lipgloss.Color("#151fd5")
 	bufTeal = lipgloss.Color("#91dffb")
+
+	tuuidWidth = 32
 )
 
 // keyMap defines a set of keybindings. To work for help it must satisfy
@@ -305,7 +307,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// NOTE: It seems like module.{Description,Url} are not
 			// currently widely populated; leaving those out
 			// deliberately.
-			{Title: "ID", Width: 12},
+			{Title: "ID", Width: tuuidWidth},
 			{Title: "Name", Width: 20},
 			{Title: "Create Time", Width: 19},
 			{Title: "Visibility", Width: 10},
@@ -360,7 +362,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		columns := []table.Column{
 			// TODO: adjust these dynamically?
-			{Title: "ID", Width: 12},
+			{Title: "ID", Width: tuuidWidth},
 			{Title: "Create Time", Width: 19},
 			// No need to make this too long - it's not really
 			// useful to consumers.
