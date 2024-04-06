@@ -282,7 +282,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.listCommits()
 		case *modulev1.Resource_Commit:
 			m.moduleOwner = msg.requestedResource.Owner
-			m.moduleOwner = msg.requestedResource.Module
+			m.currentModule = msg.requestedResource.Module
 			m.currentCommit = retrievedResource.Commit.Id
 			return m, m.getCommitContent(m.currentCommit)
 		case *modulev1.Resource_Label:
