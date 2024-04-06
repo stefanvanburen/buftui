@@ -492,11 +492,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = modelStateBrowsingCommitContents
 				return m, nil
 			case modelStateBrowsingCommitContents:
-				m.state = modelStateBrowsingCommits
-				return m, nil
+				// NOTE: We don't necessarily have the commits
+				// list populated, because we may have gone
+				// directly to a reference.
+				// TODO: Hook this up to caching.
+				m.state = modelStateLoading
+				return m, m.listCommits()
 			case modelStateBrowsingCommits:
-				m.state = modelStateBrowsingModules
-				return m, nil
+				// NOTE: We don't necessarily have the module
+				// list populated, because we may have gone
+				// directly to a reference.
+				// TODO: Hook this up to caching.
+				m.state = modelStateLoading
+				return m, m.getModules()
 			}
 		}
 	}
