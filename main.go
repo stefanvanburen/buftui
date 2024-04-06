@@ -697,7 +697,7 @@ func (m model) getResource(resourceName *modulev1.ResourceRef_Name) tea.Cmd {
 		setBasicAuthHeader(request, m.username, m.token)
 		response, err := resourceServiceClient.GetResources(context.Background(), request)
 		if err != nil {
-			return errMsg{fmt.Errorf("getting commit content: %s", err)}
+			return errMsg{fmt.Errorf("getting resource: %s", err)}
 		}
 		if len(response.Msg.Resources) != 1 {
 			return errMsg{fmt.Errorf("requested 1 commit contents, got %v", len(response.Msg.Resources))}
