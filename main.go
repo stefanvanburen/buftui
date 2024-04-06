@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/module/v1/modulev1connect"
@@ -18,6 +19,7 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/bufbuild/httplb"
+	"github.com/bufbuild/protovalidate-go"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -34,14 +36,12 @@ import (
 type modelState string
 
 const (
-	modelStateLoadingModules             modelState = "loading-modules"
 	modelStateBrowsingModules            modelState = "browsing-modules"
-	modelStateLoadingCommits             modelState = "loading-commits"
 	modelStateBrowsingCommits            modelState = "browsing-commits"
-	modelStateLoadingCommitContents      modelState = "loading-commit-contents"
 	modelStateBrowsingCommitContents     modelState = "browsing-commit-contents"
 	modelStateBrowsingCommitFileContents modelState = "browsing-commit-file-contents"
 	modelStateSearching                  modelState = "searching"
+	modelStateLoading                    modelState = "loading"
 )
 
 type model struct {
@@ -65,16 +65,18 @@ type model struct {
 
 	keys keyMap
 
-	registryHostname string
-	username         string
-	token            string
-	moduleOwner      string
+	registryDomain string
+	username       string
+	token          string
+	moduleOwner    string
 
 	err error
 
 	tableStyles table.Styles
 
 	httpClient connect.HTTPClient
+
+	currentReference *modulev1.ResourceRef_Name
 }
 
 const (
@@ -180,10 +182,11 @@ func main() {
 func run(_ context.Context) error {
 	fs := ff.NewFlagSet("buftui")
 	var (
-		registryFlag   = fs.String('r', "registry", "buf.build", "BSR registry hostname")
-		fullscreenFlag = fs.Bool('f', "fullscreen", "Enable fullscreen display")
-		usernameFlag   = fs.String('u', "username", "", "Set username for authentication (default: login for registry hostname in ~/.netrc)")
-		tokenFlag      = fs.String('t', "token", "", "Set token for authentication (default: password for registry hostname in ~/.netrc)")
+		registrydomainFlag = fs.String('d', "domain", "buf.build", "BSR registry domain")
+		fullscreenFlag     = fs.Bool('f', "fullscreen", "Enable fullscreen display")
+		usernameFlag       = fs.String('u', "username", "", "Set username for authentication (default: login for registry hostname in ~/.netrc)")
+		tokenFlag          = fs.String('t', "token", "", "Set token for authentication (default: password for registry hostname in ~/.netrc)")
+		referenceFlag      = fs.String('r', "reference", "", "Set BSR reference to open")
 	)
 	if err := ff.Parse(fs, os.Args[1:]); err != nil {
 		fmt.Printf("%s\n", ffhelp.Flags(fs))
@@ -199,7 +202,7 @@ func run(_ context.Context) error {
 	}
 	if username == "" && token == "" {
 		var err error
-		username, token, err = getUserTokenFromNetrc(*registryFlag)
+		username, token, err = getUserTokenFromNetrc(*registrydomainFlag)
 		if err != nil {
 			return fmt.Errorf("getting netrc credentials: %w", err)
 		}
@@ -209,6 +212,11 @@ func run(_ context.Context) error {
 	}
 	if token == "" {
 		return fmt.Errorf("token must be set, either by flag or in the ~/.netrc file")
+	}
+
+	initialReference, err := parseReference(*referenceFlag)
+	if err != nil {
+		return fmt.Errorf("parsing reference flag: %w", err)
 	}
 
 	tableStyles := table.DefaultStyles()
@@ -226,8 +234,8 @@ func run(_ context.Context) error {
 	defer httpClient.Close()
 
 	model := model{
-		state:            modelStateLoadingModules,
-		registryHostname: *registryFlag,
+		state:            modelStateLoading,
+		registryDomain:   *registrydomainFlag,
 		username:         username,
 		token:            token,
 		moduleOwner:      username,
@@ -236,6 +244,7 @@ func run(_ context.Context) error {
 		httpClient:       httpClient,
 		help:             help.New(),
 		keys:             keys,
+		currentReference: initialReference,
 	}
 
 	var options []tea.ProgramOption
@@ -249,6 +258,9 @@ func run(_ context.Context) error {
 }
 
 func (m model) Init() tea.Cmd {
+	if m.currentReference != nil {
+		return m.getResource(m.currentReference)
+	}
 	return m.getModules()
 }
 
@@ -259,6 +271,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// its view as needed.
 		m.help.Width = msg.Width
 
+	case resourceMsg:
+		switch retrievedResource := msg.retrievedResource.Value.(type) {
+		case *modulev1.Resource_Module:
+			m.moduleOwner = msg.requestedResource.Owner
+			m.currentModule = retrievedResource.Module.Name
+			m.state = modelStateLoading
+			return m, m.listCommits()
+		case *modulev1.Resource_Commit:
+			m.moduleOwner = msg.requestedResource.Owner
+			m.moduleOwner = msg.requestedResource.Module
+			m.currentCommit = retrievedResource.Commit.Id
+			return m, m.getCommitContent(m.currentCommit)
+		case *modulev1.Resource_Label:
+			// TODO: Is this possible? I guess so?
+			// We don't handle it right now, though.
+			m.err = fmt.Errorf("cannot handle type resource of type %T", retrievedResource)
+			return m, tea.Quit
+		default:
+			m.err = fmt.Errorf("cannot handle type resource of type %T", retrievedResource)
+			return m, tea.Quit
+		}
 	case modulesMsg:
 		m.state = modelStateBrowsingModules
 		if len(msg) == 0 {
@@ -433,7 +466,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Don't do anything.
 					return m, nil
 				}
-				m.state = modelStateLoadingCommits
+				m.state = modelStateLoading
 				m.currentModule = m.moduleTable.SelectedRow()[1] // module name row
 				return m, m.listCommits()
 			case modelStateBrowsingCommits:
@@ -441,7 +474,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Don't do anything.
 					return m, nil
 				}
-				m.state = modelStateLoadingCommitContents
+				m.state = modelStateLoading
 				m.currentCommit = m.commitsTable.SelectedRow()[0] // commit name row
 				return m, m.getCommitContent(m.currentCommit)
 			case modelStateBrowsingCommitContents:
@@ -488,7 +521,7 @@ func (m model) View() string {
 	}
 	var view string
 	switch m.state {
-	case modelStateLoadingModules:
+	case modelStateLoading:
 		view = m.spinner.View()
 	case modelStateBrowsingModules:
 		header := fmt.Sprintf("Modules (Owner: %s)\n", m.moduleOwner)
@@ -498,8 +531,6 @@ func (m model) View() string {
 		} else {
 			view += m.moduleTable.View()
 		}
-	case modelStateLoadingCommits:
-		view = m.spinner.View()
 	case modelStateBrowsingCommits:
 		header := fmt.Sprintf("Commits (Module: %s/%s)\n", m.moduleOwner, m.currentModule)
 		view = header
@@ -508,8 +539,6 @@ func (m model) View() string {
 		} else {
 			view += m.commitsTable.View()
 		}
-	case modelStateLoadingCommitContents:
-		view = m.spinner.View()
 	case modelStateBrowsingCommitContents, modelStateBrowsingCommitFileContents:
 		selectedFileName := m.commitFilesTable.SelectedRow()[0]
 		var fileContents string
@@ -557,7 +586,7 @@ func (m model) getModules() tea.Cmd {
 	return func() tea.Msg {
 		moduleServiceClient := modulev1connect.NewModuleServiceClient(
 			m.httpClient,
-			"https://"+m.registryHostname,
+			"https://"+m.registryDomain,
 		)
 		request := connect.NewRequest(&modulev1.ListModulesRequest{
 			OwnerRefs: []*ownerv1.OwnerRef{
@@ -583,7 +612,7 @@ func (m model) listCommits() tea.Cmd {
 	return func() tea.Msg {
 		commitServiceClient := modulev1connect.NewCommitServiceClient(
 			m.httpClient,
-			"https://"+m.registryHostname,
+			"https://"+m.registryDomain,
 		)
 		request := connect.NewRequest(&modulev1.ListCommitsRequest{
 			ResourceRef: &modulev1.ResourceRef{
@@ -608,9 +637,9 @@ type contentsMsg *modulev1.DownloadResponse_Content
 
 func (m model) getCommitContent(commitName string) tea.Cmd {
 	return func() tea.Msg {
-		commitServiceClient := modulev1connect.NewDownloadServiceClient(
+		downloadServiceClient := modulev1connect.NewDownloadServiceClient(
 			m.httpClient,
-			"https://"+m.registryHostname,
+			"https://"+m.registryDomain,
 		)
 		request := connect.NewRequest(&modulev1.DownloadRequest{
 			Values: []*modulev1.DownloadRequest_Value{
@@ -630,7 +659,7 @@ func (m model) getCommitContent(commitName string) tea.Cmd {
 			},
 		})
 		setBasicAuthHeader(request, m.username, m.token)
-		response, err := commitServiceClient.Download(context.Background(), request)
+		response, err := downloadServiceClient.Download(context.Background(), request)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting commit content: %s", err)}
 		}
@@ -638,6 +667,43 @@ func (m model) getCommitContent(commitName string) tea.Cmd {
 			return errMsg{fmt.Errorf("requested 1 commit contents, got %v", len(response.Msg.Contents))}
 		}
 		return contentsMsg(response.Msg.Contents[0])
+	}
+}
+
+type resourceMsg struct {
+	// Avoid races with other commands by ensuring that we return the
+	// request with the response.
+	requestedResource *modulev1.ResourceRef_Name
+	retrievedResource *modulev1.Resource
+}
+
+func (m model) getResource(resourceName *modulev1.ResourceRef_Name) tea.Cmd {
+	return func() tea.Msg {
+		resourceServiceClient := modulev1connect.NewResourceServiceClient(
+			m.httpClient,
+			"https://"+m.registryDomain,
+		)
+		request := connect.NewRequest(&modulev1.GetResourcesRequest{
+			ResourceRefs: []*modulev1.ResourceRef{
+				{
+					Value: &modulev1.ResourceRef_Name_{
+						Name: resourceName,
+					},
+				},
+			},
+		})
+		setBasicAuthHeader(request, m.username, m.token)
+		response, err := resourceServiceClient.GetResources(context.Background(), request)
+		if err != nil {
+			return errMsg{fmt.Errorf("getting commit content: %s", err)}
+		}
+		if len(response.Msg.Resources) != 1 {
+			return errMsg{fmt.Errorf("requested 1 commit contents, got %v", len(response.Msg.Resources))}
+		}
+		return resourceMsg{
+			requestedResource: resourceName,
+			retrievedResource: response.Msg.Resources[0],
+		}
 	}
 }
 
@@ -708,4 +774,43 @@ func highlightFile(filename, fileContents string) (string, error) {
 		return "", fmt.Errorf("formatting file: %w", err)
 	}
 	return buffer.String(), nil
+}
+
+func parseReference(reference string) (*modulev1.ResourceRef_Name, error) {
+	if reference == "" {
+		// Empty reference is fine.
+		return nil, nil
+	}
+	if strings.Count(reference, "/") != 1 {
+		return nil, fmt.Errorf("expecting reference of either <owner>/<module> or <owner>/<module>:<ref>; got %s", reference)
+	}
+	if strings.Count(reference, ":") > 1 {
+		return nil, fmt.Errorf("expecting reference of either <owner>/<module> or <owner>/<module>:<ref>; got %s", reference)
+	}
+	// We'll accept references of the form "<owner-name>/<module-name>"
+	// or "<owner-name>/<module-name>:<ref>".
+	ownerModule, reference, hasReference := strings.Cut(reference, ":")
+	owner, module, valid := strings.Cut(ownerModule, "/")
+	// There must be a "/", regardless of anything else.
+	if !valid {
+		return nil, fmt.Errorf("expecting reference of either <owner>/<module> or <owner>/<module>:<ref>; got %s", reference)
+	}
+	moduleRef := &modulev1.ResourceRef_Name{
+		Owner:  owner,
+		Module: module,
+	}
+	// Not sure this needs to be separate, but we'll do it anyway.
+	if hasReference {
+		moduleRef.Child = &modulev1.ResourceRef_Name_Ref{
+			Ref: reference,
+		}
+	}
+	validator, err := protovalidate.New()
+	if err != nil {
+		return nil, fmt.Errorf("creating new protovalidator: %w", err)
+	}
+	if err := validator.Validate(moduleRef); err != nil {
+		return nil, fmt.Errorf("validating reference: %w", err)
+	}
+	return moduleRef, nil
 }
