@@ -708,7 +708,7 @@ func (m model) getResource(resourceName *modulev1.ResourceRef_Name) tea.Cmd {
 			return errMsg{fmt.Errorf("getting resource: %s", err)}
 		}
 		if len(response.Msg.Resources) != 1 {
-			return errMsg{fmt.Errorf("requested 1 commit contents, got %v", len(response.Msg.Resources))}
+			return errMsg{fmt.Errorf("requested 1 resource, got %v", len(response.Msg.Resources))}
 		}
 		return resourceMsg{
 			requestedResource: resourceName,
