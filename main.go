@@ -782,10 +782,11 @@ func getUserTokenFromNetrc(hostname string) (username string, token string, err 
 }
 
 func highlightFile(filename, fileContents string) (string, error) {
-	// TODO: There are only a few filetypes that can actually exist in a module:
-	// - Licenses
-	// - README (markdown/text(?))
+	// There are only a few filetypes that can actually exist in a module:
+	// - LICENSE
+	// - Documentation files (markdown)
 	// - protobuf
+	// Ref: https://buf.build/bufbuild/registry/docs/main:buf.registry.module.v1#buf.registry.module.v1.FileType
 	lexer := lexers.Match(filename)
 	if lexer == nil {
 		// This happens for LICENSE files.
