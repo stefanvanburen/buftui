@@ -389,11 +389,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = modelStateBrowsingCommitContents
 		m.currentCommitFiles = msg.Files
 		m.fileViewport = viewport.New(100, max(tableHeight, 30))
-		for _, file := range m.currentCommitFiles {
-			if file.Path == m.commitFilesTable.SelectedRow()[0] {
-				m.fileViewport.SetContent(string(file.Content))
-			}
-		}
 		return m, nil
 
 	case errMsg:
