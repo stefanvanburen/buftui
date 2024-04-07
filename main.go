@@ -31,17 +31,25 @@ import (
 	"github.com/jdx/go-netrc"
 	"github.com/peterbourgon/ff/v4"
 	"github.com/peterbourgon/ff/v4/ffhelp"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-type modelState string
+type modelState int
 
 const (
-	modelStateBrowsingModules            modelState = "browsing-modules"
-	modelStateBrowsingCommits            modelState = "browsing-commits"
-	modelStateBrowsingCommitContents     modelState = "browsing-commit-contents"
-	modelStateBrowsingCommitFileContents modelState = "browsing-commit-file-contents"
-	modelStateSearching                  modelState = "searching"
-	modelStateLoading                    modelState = "loading"
+	modelStateBrowsingModules modelState = iota
+	modelStateBrowsingCommits
+	modelStateBrowsingCommitContents
+	modelStateBrowsingCommitFileContents
+	modelStateSearching
+	modelStateLoading
+)
+
+type timeView int
+
+const (
+	timeViewAbsolute timeView = iota
+	timeViewRelative
 )
 
 type model struct {
@@ -49,12 +57,11 @@ type model struct {
 
 	spinner spinner.Model
 
-	// TODO: Share a single table and just hold on to the messages and
-	// re-render?
+	currentModules modulesMsg
+	currentCommits commitsMsg
+
 	moduleTable        table.Model
-	noOwnerModules     bool
 	commitsTable       table.Model
-	noModuleCommits    bool
 	commitFilesTable   table.Model
 	currentModule      string
 	currentCommit      string
@@ -62,6 +69,7 @@ type model struct {
 	fileViewport       viewport.Model
 	searchInput        textinput.Model
 	help               help.Model
+	timeView           timeView
 
 	keys keyMap
 
@@ -89,14 +97,15 @@ const (
 // keyMap defines a set of keybindings. To work for help it must satisfy
 // key.Map. It could also very easily be a map[string]key.Binding.
 type keyMap struct {
-	Up     key.Binding
-	Down   key.Binding
-	Left   key.Binding
-	Right  key.Binding
-	Search key.Binding
-	Enter  key.Binding
-	Help   key.Binding
-	Quit   key.Binding
+	Up             key.Binding
+	Down           key.Binding
+	Left           key.Binding
+	Right          key.Binding
+	Search         key.Binding
+	Enter          key.Binding
+	Help           key.Binding
+	Quit           key.Binding
+	ToggleTimeView key.Binding
 }
 
 func (m model) ShortHelp() []key.Binding {
@@ -104,19 +113,21 @@ func (m model) ShortHelp() []key.Binding {
 	switch m.state {
 	case modelStateBrowsingModules:
 		// Can't go Left while browsing modules; already at the "top".
-		if m.noOwnerModules {
+		shortHelp = []key.Binding{keys.Up, keys.Down}
+		if len(m.currentModules) == 0 {
 			// Can't go Right when no modules exist.
-			shortHelp = []key.Binding{keys.Up, keys.Down}
-		} else {
-			shortHelp = []key.Binding{keys.Up, keys.Down, keys.Right}
+			shortHelp = append(shortHelp, keys.Right)
 		}
+		// Always last.
+		shortHelp = append(shortHelp, keys.ToggleTimeView)
 	case modelStateBrowsingCommits, modelStateBrowsingCommitContents:
-		if m.noModuleCommits {
+		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left}
+		if len(m.currentCommits) == 0 {
 			// Can't go Right when no commits exist.
-			shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left}
-		} else {
-			shortHelp = []key.Binding{keys.Up, keys.Down, keys.Right, keys.Left}
+			shortHelp = append(shortHelp, keys.Right)
 		}
+		// Always last.
+		shortHelp = append(shortHelp, keys.ToggleTimeView)
 	case modelStateBrowsingCommitFileContents:
 		// Can't go Right while browsing file contents; already at the "bottom".
 		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left}
@@ -133,7 +144,7 @@ func (m model) ShortHelp() []key.Binding {
 func (m model) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		m.ShortHelp(),
-		{keys.Search, keys.Help, keys.Quit},
+		{keys.Search, keys.ToggleTimeView, keys.Help, keys.Quit},
 	}
 }
 
@@ -171,6 +182,10 @@ var keys = keyMap{
 	Quit: key.NewBinding(
 		key.WithKeys("q", "esc", "ctrl+c"),
 		key.WithHelp("q", "quit"),
+	),
+	ToggleTimeView: key.NewBinding(
+		key.WithKeys("t"),
+		key.WithHelp("t", "toggle time view (absolute / relative)"),
 	),
 }
 
@@ -247,6 +262,7 @@ func run(_ context.Context) error {
 		help:             help.New(),
 		keys:             keys,
 		currentReference: initialReference,
+		timeView:         timeViewAbsolute,
 	}
 
 	var options []tea.ProgramOption
@@ -296,12 +312,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case modulesMsg:
 		m.state = modelStateBrowsingModules
-		if len(msg) == 0 {
-			m.noOwnerModules = true
+		m.currentModules = msg
+		if len(m.currentModules) == 0 {
 			return m, nil
 		}
-		// Reset.
-		m.noOwnerModules = false
 		columns := []table.Column{
 			// TODO: adjust these dynamically?
 			// NOTE: It seems like module.{Description,Url} are not
@@ -313,53 +327,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			{Title: "Visibility", Width: 10},
 			{Title: "State", Width: 10},
 		}
-		tableHeight := len(msg)
-		rows := make([]table.Row, len(msg))
-		for i, module := range msg {
-			var visibility string
-			switch module.Visibility {
-			case modulev1.ModuleVisibility_MODULE_VISIBILITY_PRIVATE:
-				visibility = "private"
-			case modulev1.ModuleVisibility_MODULE_VISIBILITY_PUBLIC:
-				visibility = "public"
-			default:
-				visibility = "unknown"
-			}
-			var state string
-			switch module.State {
-			case modulev1.ModuleState_MODULE_STATE_ACTIVE:
-				state = "active"
-			case modulev1.ModuleState_MODULE_STATE_DEPRECATED:
-				state = "deprecated"
-			default:
-				state = "unknown"
-			}
-			rows[i] = table.Row{
-				module.Id,
-				module.Name,
-				module.CreateTime.AsTime().Format(time.DateTime),
-				visibility,
-				state,
-			}
-		}
 		m.moduleTable = table.New(
 			table.WithColumns(columns),
-			table.WithRows(rows),
+			table.WithRows(m.formatModuleRows(m.currentModules)),
 			table.WithFocused(true),
-			table.WithHeight(tableHeight),
+			table.WithHeight(len(m.currentModules)),
 			table.WithStyles(m.tableStyles),
 		)
 		return m, nil
 
 	case commitsMsg:
 		m.state = modelStateBrowsingCommits
-		if len(msg) == 0 {
-			m.noModuleCommits = true
+		m.currentCommits = msg
+		if len(m.currentCommits) == 0 {
 			return m, nil
 		}
-		// Reset.
-		m.noModuleCommits = false
-
 		columns := []table.Column{
 			// TODO: adjust these dynamically?
 			{Title: "ID", Width: tuuidWidth},
@@ -369,17 +351,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			{Title: "b5 Digest", Width: 9},
 			// TODO: What else is useful here?
 		}
-		rows := make([]table.Row, len(msg))
-		for i, commit := range msg {
-			rows[i] = table.Row{
-				commit.Id,
-				commit.CreateTime.AsTime().Format(time.DateTime),
-				fmt.Sprintf("%x", commit.Digest.Value),
-			}
-		}
 		m.commitsTable = table.New(
 			table.WithColumns(columns),
-			table.WithRows(rows),
+			table.WithRows(m.formatCommitRows(m.currentCommits)),
 			table.WithFocused(true),
 			table.WithHeight(len(msg)),
 			table.WithStyles(m.tableStyles),
@@ -464,7 +438,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Right):
 			switch m.state {
 			case modelStateBrowsingModules:
-				if m.noOwnerModules {
+				if len(m.currentModules) == 0 {
 					// Don't do anything.
 					return m, nil
 				}
@@ -472,7 +446,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currentModule = m.moduleTable.SelectedRow()[1] // module name row
 				return m, m.listCommits()
 			case modelStateBrowsingCommits:
-				if m.noModuleCommits {
+				if len(m.currentCommits) == 0 {
 					// Don't do anything.
 					return m, nil
 				}
@@ -506,6 +480,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = modelStateLoading
 				return m, m.getModules()
 			}
+		case key.Matches(msg, m.keys.ToggleTimeView):
+			if m.timeView == timeViewAbsolute {
+				m.timeView = timeViewRelative
+			} else {
+				m.timeView = timeViewAbsolute
+			}
+			m.moduleTable.SetRows(m.formatModuleRows(m.currentModules))
+			m.commitsTable.SetRows(m.formatCommitRows(m.currentCommits))
+			return m, nil
 		}
 	}
 
@@ -536,7 +519,7 @@ func (m model) View() string {
 	case modelStateBrowsingModules:
 		header := fmt.Sprintf("Modules (Owner: %s)\n", m.moduleOwner)
 		view = header
-		if m.noOwnerModules {
+		if len(m.currentModules) == 0 {
 			view += fmt.Sprintf("No modules found for owner; use %s to search for another owner", keys.Search.Keys())
 		} else {
 			view += m.moduleTable.View()
@@ -544,7 +527,7 @@ func (m model) View() string {
 	case modelStateBrowsingCommits:
 		header := fmt.Sprintf("Commits (Module: %s/%s)\n", m.moduleOwner, m.currentModule)
 		view = header
-		if m.noModuleCommits {
+		if len(m.currentCommits) == 0 {
 			view += "No commits found for module"
 		} else {
 			view += m.commitsTable.View()
@@ -588,6 +571,58 @@ func (m model) View() string {
 	}
 	view += "\n\n" + m.help.View(m)
 	return view
+}
+
+func (m model) formatModuleRows(msg modulesMsg) []table.Row {
+	rows := make([]table.Row, len(msg))
+	for i, module := range msg {
+		var visibility string
+		switch module.Visibility {
+		case modulev1.ModuleVisibility_MODULE_VISIBILITY_PRIVATE:
+			visibility = "private"
+		case modulev1.ModuleVisibility_MODULE_VISIBILITY_PUBLIC:
+			visibility = "public"
+		default:
+			visibility = "unknown"
+		}
+		var state string
+		switch module.State {
+		case modulev1.ModuleState_MODULE_STATE_ACTIVE:
+			state = "active"
+		case modulev1.ModuleState_MODULE_STATE_DEPRECATED:
+			state = "deprecated"
+		default:
+			state = "unknown"
+		}
+		rows[i] = table.Row{
+			module.Id,
+			module.Name,
+			m.formatTimestamp(module.CreateTime),
+			visibility,
+			state,
+		}
+	}
+	return rows
+}
+
+func (m model) formatCommitRows(msg commitsMsg) []table.Row {
+	rows := make([]table.Row, len(msg))
+	for i, commit := range msg {
+		rows[i] = table.Row{
+			commit.Id,
+			m.formatTimestamp(commit.CreateTime),
+			fmt.Sprintf("%x", commit.Digest.Value),
+		}
+	}
+	return rows
+}
+
+func (m model) formatTimestamp(timestamp *timestamppb.Timestamp) string {
+	if m.timeView == timeViewAbsolute {
+		return timestamp.AsTime().Format(time.DateTime)
+	}
+	// AsTime() returns a Go time.Time in UTC; make sure now is in UTC.
+	return formatTimeAgo(time.Now().UTC(), timestamp.AsTime())
 }
 
 type modulesMsg []*modulev1.Module
@@ -823,4 +858,44 @@ func parseReference(reference string) (*modulev1.ResourceRef_Name, error) {
 		return nil, fmt.Errorf("validating reference: %w", err)
 	}
 	return moduleRef, nil
+}
+
+// formatTimeAgo returns a string representing an amount of time passed between
+// now and timestamp.
+func formatTimeAgo(now, timestamp time.Time) string {
+	if timestamp.After(now) {
+		// ??? - Let's not handle this case yet...
+		return "in the future"
+	}
+	if now.Equal(timestamp) {
+		return "now"
+	}
+	// Handle larger differences first.
+	if yearDifference := now.Year() - timestamp.Year(); yearDifference != 0 {
+		if yearDifference == 1 {
+			return "last year"
+		}
+		return fmt.Sprintf("%d years ago", yearDifference)
+	}
+	if monthDifference := now.Month() - timestamp.Month(); monthDifference != 0 {
+		if monthDifference == 1 {
+			return "last month"
+		}
+		return fmt.Sprintf("%d months ago", monthDifference)
+	}
+	if dayDifference := now.Day() - timestamp.Day(); dayDifference != 0 {
+		if dayDifference == 1 {
+			return "yesterday"
+		}
+		return fmt.Sprintf("%d days ago", dayDifference)
+	}
+	// Same date.
+	durationAgo := now.Sub(timestamp)
+	if durationAgo.Seconds() < 60 {
+		return "a few seconds ago"
+	}
+	if durationAgo.Minutes() < 60 {
+		return fmt.Sprintf("%d minutes ago", int(durationAgo.Minutes()))
+	}
+	return fmt.Sprintf("%d hours ago", int(durationAgo.Hours()))
 }
