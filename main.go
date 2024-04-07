@@ -34,161 +34,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-type modelState int
-
-const (
-	modelStateBrowsingModules modelState = iota
-	modelStateBrowsingCommits
-	modelStateBrowsingCommitContents
-	modelStateBrowsingCommitFileContents
-	modelStateSearching
-	modelStateLoading
-)
-
-type timeView int
-
-const (
-	timeViewAbsolute timeView = iota
-	timeViewRelative
-)
-
-type model struct {
-	state modelState
-
-	spinner spinner.Model
-
-	currentModules modulesMsg
-	currentCommits commitsMsg
-
-	moduleTable        table.Model
-	commitsTable       table.Model
-	commitFilesTable   table.Model
-	currentModule      string
-	currentCommit      string
-	currentCommitFiles []*modulev1.File
-	fileViewport       viewport.Model
-	searchInput        textinput.Model
-	help               help.Model
-	timeView           timeView
-
-	keys keyMap
-
-	registryDomain string
-	username       string
-	token          string
-	moduleOwner    string
-
-	err error
-
-	tableStyles table.Styles
-
-	httpClient connect.HTTPClient
-
-	currentReference *modulev1.ResourceRef_Name
-}
-
-const (
-	bufBlue = lipgloss.Color("#151fd5")
-	bufTeal = lipgloss.Color("#91dffb")
-
-	tuuidWidth = 32
-)
-
-// keyMap defines a set of keybindings. To work for help it must satisfy
-// key.Map. It could also very easily be a map[string]key.Binding.
-type keyMap struct {
-	Up             key.Binding
-	Down           key.Binding
-	Left           key.Binding
-	Right          key.Binding
-	Search         key.Binding
-	Enter          key.Binding
-	Help           key.Binding
-	Quit           key.Binding
-	ToggleTimeView key.Binding
-}
-
-func (m model) ShortHelp() []key.Binding {
-	var shortHelp []key.Binding
-	switch m.state {
-	case modelStateBrowsingModules:
-		// Can't go Left while browsing modules; already at the "top".
-		shortHelp = []key.Binding{keys.Up, keys.Down}
-		if len(m.currentModules) == 0 {
-			// Can't go Right when no modules exist.
-			shortHelp = append(shortHelp, keys.Right)
-		}
-		// Always last.
-		shortHelp = append(shortHelp, keys.ToggleTimeView)
-	case modelStateBrowsingCommits, modelStateBrowsingCommitContents:
-		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left}
-		if len(m.currentCommits) == 0 {
-			// Can't go Right when no commits exist.
-			shortHelp = append(shortHelp, keys.Right)
-		}
-		// Always last.
-		shortHelp = append(shortHelp, keys.ToggleTimeView)
-	case modelStateBrowsingCommitFileContents:
-		// Can't go Right while browsing file contents; already at the "bottom".
-		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left}
-	case modelStateSearching:
-		shortHelp = []key.Binding{keys.Enter}
-	default:
-		// In the other states, just show Help and Quit.
-		return []key.Binding{keys.Help, keys.Quit}
-	}
-	// Always show the Help key.
-	return append(shortHelp, keys.Help)
-}
-
-func (m model) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		m.ShortHelp(),
-		{keys.Search, keys.ToggleTimeView, keys.Help, keys.Quit},
-	}
-}
-
-var keys = keyMap{
-	// TODO: Ideally we'd pull these from the viewing model KeyMap defaults
-	// (e.g. m.fileViewport.KeyMap); for now just give some basics.
-	Up: key.NewBinding(
-		key.WithKeys("up", "k"),
-		key.WithHelp("↑/k", "move up"),
-	),
-	Down: key.NewBinding(
-		key.WithKeys("down", "j"),
-		key.WithHelp("↓/j", "move down"),
-	),
-	Left: key.NewBinding(
-		key.WithKeys("left", "h"),
-		key.WithHelp("←/h", "go out"),
-	),
-	Right: key.NewBinding(
-		key.WithKeys("right", "l"),
-		key.WithHelp("→/l", "go in"),
-	),
-	Enter: key.NewBinding(
-		key.WithKeys("enter"),
-		key.WithHelp("enter", "search"),
-	),
-	Search: key.NewBinding(
-		key.WithKeys("s"),
-		key.WithHelp("s", "search for owner"),
-	),
-	Help: key.NewBinding(
-		key.WithKeys("?"),
-		key.WithHelp("?", "toggle help"),
-	),
-	Quit: key.NewBinding(
-		key.WithKeys("q", "esc", "ctrl+c"),
-		key.WithHelp("q", "quit"),
-	),
-	ToggleTimeView: key.NewBinding(
-		key.WithKeys("t"),
-		key.WithHelp("t", "toggle time view (absolute / relative)"),
-	),
-}
-
 func main() {
 	if err := run(context.Background()); err != nil {
 		fmt.Printf("error: %v\n", err)
@@ -273,6 +118,65 @@ func run(_ context.Context) error {
 		return err
 	}
 	return nil
+}
+
+type modelState int
+
+const (
+	modelStateBrowsingModules modelState = iota
+	modelStateBrowsingCommits
+	modelStateBrowsingCommitContents
+	modelStateBrowsingCommitFileContents
+	modelStateSearching
+	modelStateLoading
+)
+
+type timeView int
+
+const (
+	timeViewAbsolute timeView = iota
+	timeViewRelative
+)
+const (
+	bufBlue = lipgloss.Color("#151fd5")
+	bufTeal = lipgloss.Color("#91dffb")
+
+	tuuidWidth = 32
+)
+
+type model struct {
+	state modelState
+
+	spinner spinner.Model
+
+	currentModules modulesMsg
+	currentCommits commitsMsg
+
+	moduleTable        table.Model
+	commitsTable       table.Model
+	commitFilesTable   table.Model
+	currentModule      string
+	currentCommit      string
+	currentCommitFiles []*modulev1.File
+	fileViewport       viewport.Model
+	searchInput        textinput.Model
+	help               help.Model
+	timeView           timeView
+
+	keys keyMap
+
+	registryDomain string
+	username       string
+	token          string
+	moduleOwner    string
+
+	err error
+
+	tableStyles table.Styles
+
+	httpClient connect.HTTPClient
+
+	currentReference *modulev1.ResourceRef_Name
 }
 
 func (m model) Init() tea.Cmd {
@@ -894,4 +798,99 @@ func formatTimeAgo(now, timestamp time.Time) string {
 		return fmt.Sprintf("%d minutes ago", int(durationAgo.Minutes()))
 	}
 	return fmt.Sprintf("%d hours ago", int(durationAgo.Hours()))
+}
+
+// keyMap defines a set of keybindings. To work for help it must satisfy
+// key.Map. It could also very easily be a map[string]key.Binding.
+type keyMap struct {
+	Up             key.Binding
+	Down           key.Binding
+	Left           key.Binding
+	Right          key.Binding
+	Search         key.Binding
+	Enter          key.Binding
+	Help           key.Binding
+	Quit           key.Binding
+	ToggleTimeView key.Binding
+}
+
+var keys = keyMap{
+	// TODO: Ideally we'd pull these from the viewing model KeyMap defaults
+	// (e.g. m.fileViewport.KeyMap); for now just give some basics.
+	Up: key.NewBinding(
+		key.WithKeys("up", "k"),
+		key.WithHelp("↑/k", "move up"),
+	),
+	Down: key.NewBinding(
+		key.WithKeys("down", "j"),
+		key.WithHelp("↓/j", "move down"),
+	),
+	Left: key.NewBinding(
+		key.WithKeys("left", "h"),
+		key.WithHelp("←/h", "go out"),
+	),
+	Right: key.NewBinding(
+		key.WithKeys("right", "l"),
+		key.WithHelp("→/l", "go in"),
+	),
+	Enter: key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "search"),
+	),
+	Search: key.NewBinding(
+		key.WithKeys("s"),
+		key.WithHelp("s", "search for owner"),
+	),
+	Help: key.NewBinding(
+		key.WithKeys("?"),
+		key.WithHelp("?", "toggle help"),
+	),
+	Quit: key.NewBinding(
+		key.WithKeys("q", "esc", "ctrl+c"),
+		key.WithHelp("q", "quit"),
+	),
+	ToggleTimeView: key.NewBinding(
+		key.WithKeys("t"),
+		key.WithHelp("t", "toggle time view (absolute / relative)"),
+	),
+}
+
+func (m model) ShortHelp() []key.Binding {
+	var shortHelp []key.Binding
+	switch m.state {
+	case modelStateBrowsingModules:
+		// Can't go Left while browsing modules; already at the "top".
+		shortHelp = []key.Binding{keys.Up, keys.Down}
+		if len(m.currentModules) == 0 {
+			// Can't go Right when no modules exist.
+			shortHelp = append(shortHelp, keys.Right)
+		}
+		// Always last.
+		shortHelp = append(shortHelp, keys.ToggleTimeView)
+	case modelStateBrowsingCommits, modelStateBrowsingCommitContents:
+		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left}
+		if len(m.currentCommits) == 0 {
+			// Can't go Right when no commits exist.
+			shortHelp = append(shortHelp, keys.Right)
+		}
+		// Always last.
+		shortHelp = append(shortHelp, keys.ToggleTimeView)
+	case modelStateBrowsingCommitFileContents:
+		// Can't go Right while browsing file contents; already at the "bottom".
+		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left}
+	case modelStateSearching:
+		shortHelp = []key.Binding{keys.Enter}
+	default:
+		// In the other states, just show Help and Quit.
+		return []key.Binding{keys.Help, keys.Quit}
+	}
+	// Always show the Help key.
+	return append(shortHelp, keys.Help)
+}
+
+func (m model) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		m.ShortHelp(),
+		{keys.Search, keys.ToggleTimeView, keys.Help, keys.Quit},
+	}
 }
