@@ -95,8 +95,13 @@ func run(_ context.Context) error {
 	httpClient := httplb.NewClient()
 	defer httpClient.Close()
 
+	initialState := modelStateSearching
+	if initialReference != nil {
+		initialState = modelStateLoading
+	}
+
 	model := model{
-		state:            modelStateLoading,
+		state:            initialState,
 		registryDomain:   *registrydomainFlag,
 		username:         username,
 		token:            token,
@@ -108,6 +113,7 @@ func run(_ context.Context) error {
 		keys:             keys,
 		currentReference: initialReference,
 		timeView:         timeViewAbsolute,
+		searchInput:      newSearchInput(),
 	}
 
 	var options []tea.ProgramOption
@@ -182,7 +188,7 @@ func (m model) Init() tea.Cmd {
 	if m.currentReference != nil {
 		return m.getResource(m.currentReference)
 	}
-	return m.getModules()
+	return nil
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -310,18 +316,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state != modelStateSearching {
 				// "s" -> "search"
 				m.state = modelStateSearching
-				searchInput := textinput.New()
-				// Style the input.
-				// TODO: This is probably too much.
-				searchStyle := lipgloss.NewStyle().Foreground(bufBlue).Background(bufTeal)
-				searchInput.PromptStyle = searchStyle
-				searchInput.PlaceholderStyle = searchStyle
-				searchInput.TextStyle = searchStyle
-				searchInput.Cursor.Style = searchStyle
-				searchInput.Focus()
-				searchInput.Placeholder = "bufbuild"
-				searchInput.Width = 20
-				m.searchInput = searchInput
+				m.searchInput = newSearchInput()
 				return m, nil
 			}
 		case key.Matches(msg, m.keys.Enter):
@@ -892,4 +887,19 @@ func (m model) FullHelp() [][]key.Binding {
 		m.ShortHelp(),
 		{keys.Search, keys.ToggleTimeView, keys.Help, keys.Quit},
 	}
+}
+
+func newSearchInput() textinput.Model {
+	searchInput := textinput.New()
+	// Style the input.
+	// TODO: This is probably too much.
+	searchStyle := lipgloss.NewStyle().Foreground(bufBlue).Background(bufTeal)
+	searchInput.PromptStyle = searchStyle
+	searchInput.PlaceholderStyle = searchStyle
+	searchInput.TextStyle = searchStyle
+	searchInput.Cursor.Style = searchStyle
+	searchInput.Focus()
+	searchInput.Placeholder = "bufbuild"
+	searchInput.Width = 20
+	return searchInput
 }
