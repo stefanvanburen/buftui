@@ -100,7 +100,7 @@ func run(_ context.Context) error {
 		registryDomain:   *registrydomainFlag,
 		username:         username,
 		token:            token,
-		moduleOwner:      username,
+		currentOwner:     username,
 		spinner:          spinner.New(),
 		tableStyles:      tableStyles,
 		httpClient:       httpClient,
@@ -145,38 +145,37 @@ const (
 )
 
 type model struct {
-	state modelState
-
-	spinner spinner.Model
-
-	currentModules modulesMsg
-	currentCommits commitsMsg
-
-	moduleTable        table.Model
-	commitsTable       table.Model
-	commitFilesTable   table.Model
-	currentModule      string
-	currentCommit      string
-	currentCommitFiles []*modulev1.File
-	fileViewport       viewport.Model
-	searchInput        textinput.Model
-	help               help.Model
-	timeView           timeView
-
-	keys keyMap
-
+	// (Basically) Static
 	registryDomain string
 	username       string
 	token          string
-	moduleOwner    string
+	tableStyles    table.Styles
+	spinner        spinner.Model
+	httpClient     connect.HTTPClient
+	keys           keyMap
 
+	// State - where are we?
+	state    modelState
+	timeView timeView
+	// Should exit when setting this.
 	err error
 
-	tableStyles table.Styles
+	// State-related data
+	currentOwner       string
+	currentModule      string
+	currentCommit      string
+	currentModules     modulesMsg
+	currentCommits     commitsMsg
+	currentCommitFiles []*modulev1.File
+	currentReference   *modulev1.ResourceRef_Name
 
-	httpClient connect.HTTPClient
-
-	currentReference *modulev1.ResourceRef_Name
+	// Sub-models
+	moduleTable      table.Model
+	commitsTable     table.Model
+	commitFilesTable table.Model
+	fileViewport     viewport.Model
+	searchInput      textinput.Model
+	help             help.Model
 }
 
 func (m model) Init() tea.Cmd {
@@ -196,12 +195,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case resourceMsg:
 		switch retrievedResource := msg.retrievedResource.Value.(type) {
 		case *modulev1.Resource_Module:
-			m.moduleOwner = msg.requestedResource.Owner
+			m.currentOwner = msg.requestedResource.Owner
 			m.currentModule = retrievedResource.Module.Name
 			m.state = modelStateLoading
 			return m, m.listCommits()
 		case *modulev1.Resource_Commit:
-			m.moduleOwner = msg.requestedResource.Owner
+			m.currentOwner = msg.requestedResource.Owner
 			m.currentModule = msg.requestedResource.Module
 			m.currentCommit = retrievedResource.Commit.Id
 			return m, m.getCommitContent(m.currentCommit)
@@ -328,7 +327,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Enter):
 			switch m.state {
 			case modelStateSearching:
-				m.moduleOwner = m.searchInput.Value()
+				m.currentOwner = m.searchInput.Value()
 				// TODO: Clear search input?
 				return m, m.getModules()
 			}
@@ -416,7 +415,7 @@ func (m model) View() string {
 	case modelStateLoading:
 		view = m.spinner.View()
 	case modelStateBrowsingModules:
-		header := fmt.Sprintf("Modules (Owner: %s)\n", m.moduleOwner)
+		header := fmt.Sprintf("Modules (Owner: %s)\n", m.currentOwner)
 		view = header
 		if len(m.currentModules) == 0 {
 			view += fmt.Sprintf("No modules found for owner; use %s to search for another owner", keys.Search.Keys())
@@ -424,7 +423,7 @@ func (m model) View() string {
 			view += m.moduleTable.View()
 		}
 	case modelStateBrowsingCommits:
-		header := fmt.Sprintf("Commits (Module: %s/%s)\n", m.moduleOwner, m.currentModule)
+		header := fmt.Sprintf("Commits (Module: %s/%s)\n", m.currentOwner, m.currentModule)
 		view = header
 		if len(m.currentCommits) == 0 {
 			view += "No commits found for module"
@@ -455,7 +454,7 @@ func (m model) View() string {
 		}
 		view = lipgloss.JoinVertical(
 			lipgloss.Left,
-			fmt.Sprintf("Commit %s (Module: %s/%s)\n", m.currentCommit, m.moduleOwner, m.currentModule),
+			fmt.Sprintf("Commit %s (Module: %s/%s)\n", m.currentCommit, m.currentOwner, m.currentModule),
 			lipgloss.JoinHorizontal(
 				lipgloss.Top,
 				m.commitFilesTable.View(),
@@ -536,7 +535,7 @@ func (m model) getModules() tea.Cmd {
 			OwnerRefs: []*ownerv1.OwnerRef{
 				{
 					Value: &ownerv1.OwnerRef_Name{
-						Name: m.moduleOwner,
+						Name: m.currentOwner,
 					},
 				},
 			},
@@ -562,7 +561,7 @@ func (m model) listCommits() tea.Cmd {
 			ResourceRef: &modulev1.ResourceRef{
 				Value: &modulev1.ResourceRef_Name_{
 					Name: &modulev1.ResourceRef_Name{
-						Owner:  m.moduleOwner,
+						Owner:  m.currentOwner,
 						Module: m.currentModule,
 					},
 				},
@@ -591,7 +590,7 @@ func (m model) getCommitContent(commitName string) tea.Cmd {
 					ResourceRef: &modulev1.ResourceRef{
 						Value: &modulev1.ResourceRef_Name_{
 							Name: &modulev1.ResourceRef_Name{
-								Owner:  m.moduleOwner,
+								Owner:  m.currentOwner,
 								Module: m.currentModule,
 								Child: &modulev1.ResourceRef_Name_Ref{
 									Ref: commitName,
