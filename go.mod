@@ -4,15 +4,17 @@ go 1.22.0
 
 require (
 	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.16.0-20240327205414-2f1854093b57.1
-	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.33.0-20240327205414-2f1854093b57.1
+	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.33.0-20240401180337-569d290ee4cc.1
 	connectrpc.com/connect v1.16.0
 	github.com/alecthomas/chroma/v2 v2.13.0
 	github.com/bufbuild/httplb v0.1.0
+	github.com/bufbuild/protovalidate-go v0.6.1
 	github.com/charmbracelet/bubbles v0.18.0
 	github.com/charmbracelet/bubbletea v0.25.0
 	github.com/charmbracelet/lipgloss v0.10.0
 	github.com/jdx/go-netrc v1.0.0
 	github.com/peterbourgon/ff/v4 v4.0.0-alpha.4
+	google.golang.org/protobuf v1.33.0
 )
 
 require (
@@ -20,7 +22,6 @@ require (
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
-	github.com/bufbuild/protovalidate-go v0.6.1 // indirect
 	github.com/containerd/console v1.0.4-0.20230313162750-1ae8d489ac81 // indirect
 	github.com/dlclark/regexp2 v1.11.0 // indirect
 	github.com/google/cel-go v0.20.1 // indirect
@@ -42,5 +43,4 @@ require (
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240401170217-c3f982113cda // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240401170217-c3f982113cda // indirect
-	google.golang.org/protobuf v1.33.0 // indirect
 )
