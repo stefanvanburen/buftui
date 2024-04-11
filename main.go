@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -44,11 +45,12 @@ func main() {
 func run(_ context.Context) error {
 	fs := ff.NewFlagSet("buftui")
 	var (
-		registrydomainFlag = fs.String('d', "domain", "buf.build", "BSR registry domain")
-		fullscreenFlag     = fs.Bool('f', "fullscreen", "Enable fullscreen display")
-		usernameFlag       = fs.String('u', "username", "", "Set username for authentication (default: login for registry hostname in ~/.netrc)")
-		tokenFlag          = fs.String('t', "token", "", "Set token for authentication (default: password for registry hostname in ~/.netrc)")
-		referenceFlag      = fs.String('r', "reference", "", "Set BSR reference to open")
+		// `-r` is for reference, which should generally be preferred.
+		remoteFlag     = fs.StringLong("remote", "buf.build", "BSR remote")
+		fullscreenFlag = fs.Bool('f', "fullscreen", "Enable fullscreen display")
+		usernameFlag   = fs.String('u', "username", "", "Set username for authentication (default: login for remote in ~/.netrc)")
+		tokenFlag      = fs.String('t', "token", "", "Set token for authentication (default: password for remote in ~/.netrc)")
+		referenceFlag  = fs.String('r', "reference", "", "Set BSR reference to open")
 	)
 	if err := ff.Parse(fs, os.Args[1:]); err != nil {
 		fmt.Printf("%s\n", ffhelp.Flags(fs))
@@ -58,15 +60,29 @@ func run(_ context.Context) error {
 	username := *usernameFlag
 	token := *tokenFlag
 
+	parsedRemote, parsedReference, err := parseReference(*referenceFlag)
+	if err != nil {
+		return fmt.Errorf("parsing reference flag: %w", err)
+	}
+	if parsedRemote != "" && *remoteFlag != "" && *remoteFlag != parsedRemote {
+		return fmt.Errorf("cannot provide conflicting `--remote` flag (%s) and reference remote (%s)", *remoteFlag, parsedRemote)
+	}
+	// We know the remotes at least aren't conflicting, so take whichever is non-empty.
+	remote := cmp.Or(*remoteFlag, parsedRemote)
+	// Sanity check for `--remote ""`, or an invalid parsed reference.
+	if remote == "" {
+		return fmt.Errorf("remote cannot be empty")
+	}
+
 	// Either username && token should be provided at the CLI, or they should be loaded from the ~/.netrc.
 	if (username == "" && token != "") || (username != "" && token == "") {
 		return fmt.Errorf("must set both username and token flags, or neither (and load authentication from ~/.netrc)")
 	}
 	if username == "" && token == "" {
 		var err error
-		username, token, err = getUserTokenFromNetrc(*registrydomainFlag)
+		username, token, err = getUserTokenFromNetrc(remote)
 		if err != nil {
-			return fmt.Errorf("getting netrc credentials: %w", err)
+			return fmt.Errorf("getting netrc credentials for remote %q: %w", remote, err)
 		}
 	}
 	if username == "" {
@@ -74,11 +90,6 @@ func run(_ context.Context) error {
 	}
 	if token == "" {
 		return fmt.Errorf("token must be set, either by flag or in the ~/.netrc file")
-	}
-
-	initialReference, err := parseReference(*referenceFlag)
-	if err != nil {
-		return fmt.Errorf("parsing reference flag: %w", err)
 	}
 
 	tableStyles := table.DefaultStyles()
@@ -96,13 +107,13 @@ func run(_ context.Context) error {
 	defer httpClient.Close()
 
 	initialState := modelStateSearching
-	if initialReference != nil {
+	if parsedReference != nil {
 		initialState = modelStateLoading
 	}
 
 	model := model{
 		state:            initialState,
-		registryDomain:   *registrydomainFlag,
+		remote:           remote,
 		username:         username,
 		token:            token,
 		currentOwner:     username,
@@ -111,7 +122,7 @@ func run(_ context.Context) error {
 		httpClient:       httpClient,
 		help:             help.New(),
 		keys:             keys,
-		currentReference: initialReference,
+		currentReference: parsedReference,
 		timeView:         timeViewAbsolute,
 		searchInput:      newSearchInput(),
 	}
@@ -152,13 +163,13 @@ const (
 
 type model struct {
 	// (Basically) Static
-	registryDomain string
-	username       string
-	token          string
-	tableStyles    table.Styles
-	spinner        spinner.Model
-	httpClient     connect.HTTPClient
-	keys           keyMap
+	remote      string
+	username    string
+	token       string
+	tableStyles table.Styles
+	spinner     spinner.Model
+	httpClient  connect.HTTPClient
+	keys        keyMap
 
 	// State - where are we?
 	state    modelState
@@ -524,7 +535,7 @@ func (m model) getModules() tea.Cmd {
 	return func() tea.Msg {
 		moduleServiceClient := modulev1connect.NewModuleServiceClient(
 			m.httpClient,
-			"https://"+m.registryDomain,
+			"https://"+m.remote,
 		)
 		request := connect.NewRequest(&modulev1.ListModulesRequest{
 			OwnerRefs: []*ownerv1.OwnerRef{
@@ -550,7 +561,7 @@ func (m model) listCommits() tea.Cmd {
 	return func() tea.Msg {
 		commitServiceClient := modulev1connect.NewCommitServiceClient(
 			m.httpClient,
-			"https://"+m.registryDomain,
+			"https://"+m.remote,
 		)
 		request := connect.NewRequest(&modulev1.ListCommitsRequest{
 			ResourceRef: &modulev1.ResourceRef{
@@ -577,7 +588,7 @@ func (m model) getCommitContent(commitName string) tea.Cmd {
 	return func() tea.Msg {
 		downloadServiceClient := modulev1connect.NewDownloadServiceClient(
 			m.httpClient,
-			"https://"+m.registryDomain,
+			"https://"+m.remote,
 		)
 		request := connect.NewRequest(&modulev1.DownloadRequest{
 			Values: []*modulev1.DownloadRequest_Value{
@@ -619,7 +630,7 @@ func (m model) getResource(resourceName *modulev1.ResourceRef_Name) tea.Cmd {
 	return func() tea.Msg {
 		resourceServiceClient := modulev1connect.NewResourceServiceClient(
 			m.httpClient,
-			"https://"+m.registryDomain,
+			"https://"+m.remote,
 		)
 		request := connect.NewRequest(&modulev1.GetResourcesRequest{
 			ResourceRefs: []*modulev1.ResourceRef{
@@ -658,9 +669,9 @@ type errMsg struct{ err error }
 // error interface on the message.
 func (e errMsg) Error() string { return e.err.Error() }
 
-// getUserTokenFromNetrc returns the username and token for the hostname in the
+// getUserTokenFromNetrc returns the username and token for the remote in the
 // ~/.netrc file, if it exists.
-func getUserTokenFromNetrc(hostname string) (username string, token string, err error) {
+func getUserTokenFromNetrc(remote string) (username string, token string, err error) {
 	currentUser, err := user.Current()
 	if err != nil {
 		return "", "", fmt.Errorf("getting current user: %s", err)
@@ -674,8 +685,8 @@ func getUserTokenFromNetrc(hostname string) (username string, token string, err 
 	if err != nil {
 		return "", "", fmt.Errorf("parsing netrc: %s", err)
 	}
-	username = parsedNetrc.Machine(hostname).Get("login")
-	token = parsedNetrc.Machine(hostname).Get("password")
+	username = parsedNetrc.Machine(remote).Get("login")
+	token = parsedNetrc.Machine(remote).Get("password")
 	return username, token, nil
 }
 
@@ -715,24 +726,33 @@ func highlightFile(filename, fileContents string) (string, error) {
 	return buffer.String(), nil
 }
 
-func parseReference(reference string) (*modulev1.ResourceRef_Name, error) {
+func parseReference(reference string) (remote string, resourceRef *modulev1.ResourceRef_Name, err error) {
 	if reference == "" {
 		// Empty reference is fine.
-		return nil, nil
+		return "", nil, nil
 	}
-	if strings.Count(reference, "/") != 1 {
-		return nil, fmt.Errorf("expecting reference of either <owner>/<module> or <owner>/<module>:<ref>; got %s", reference)
+	slashCount := strings.Count(reference, "/")
+	if slashCount != 1 && slashCount != 2 {
+		return "", nil, fmt.Errorf("expecting reference of form {<remote>/}<owner>/<module>{:<ref>}, got %s", reference)
 	}
 	if strings.Count(reference, ":") > 1 {
-		return nil, fmt.Errorf("expecting reference of either <owner>/<module> or <owner>/<module>:<ref>; got %s", reference)
+		return "", nil, fmt.Errorf(`expecting reference of form {<remote>/}<owner>/<module>{:<ref>}, got multiple ":" in %s`, reference)
 	}
-	// We'll accept references of the form "<owner-name>/<module-name>"
-	// or "<owner-name>/<module-name>:<ref>".
-	ownerModule, reference, hasReference := strings.Cut(reference, ":")
-	owner, module, valid := strings.Cut(ownerModule, "/")
+	first, reference, hasReference := strings.Cut(reference, ":")
+	if slashCount == 2 {
+		var rest string
+		var valid bool
+		remote, rest, valid = strings.Cut(first, "/")
+		if !valid {
+			panic(fmt.Errorf("strings.Cut should be valid after check"))
+		}
+		first = rest
+	}
+	owner, module, valid := strings.Cut(first, "/")
 	// There must be a "/", regardless of anything else.
 	if !valid {
-		return nil, fmt.Errorf("expecting reference of either <owner>/<module> or <owner>/<module>:<ref>; got %s", reference)
+		// We know this is true, from the check above.
+		panic(fmt.Errorf("strings.Cut should be valid after check"))
 	}
 	moduleRef := &modulev1.ResourceRef_Name{
 		Owner:  owner,
@@ -746,12 +766,14 @@ func parseReference(reference string) (*modulev1.ResourceRef_Name, error) {
 	}
 	validator, err := protovalidate.New()
 	if err != nil {
-		return nil, fmt.Errorf("creating new protovalidator: %w", err)
+		return "", nil, fmt.Errorf("creating new protovalidator: %w", err)
 	}
 	if err := validator.Validate(moduleRef); err != nil {
-		return nil, fmt.Errorf("validating reference: %w", err)
+		return "", nil, fmt.Errorf("validating reference: %w", err)
 	}
-	return moduleRef, nil
+	// TODO: Validate remote
+	// TODO: Can we use protovalidate/cel-go for this?
+	return remote, moduleRef, nil
 }
 
 // formatTimeAgo returns a string representing an amount of time passed between
