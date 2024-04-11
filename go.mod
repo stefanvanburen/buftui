@@ -1,4 +1,4 @@
-module git.sr.ht/~svbn/buftui
+module github.com/stefanvanburen/buftui
 
 go 1.22.0
 
