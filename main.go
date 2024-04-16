@@ -108,7 +108,7 @@ func run(_ context.Context) error {
 
 	initialState := modelStateSearching
 	if parsedReference != nil {
-		initialState = modelStateLoading
+		initialState = modelStateLoadingReference
 	}
 
 	model := model{
@@ -145,7 +145,10 @@ const (
 	modelStateBrowsingCommitContents
 	modelStateBrowsingCommitFileContents
 	modelStateSearching
-	modelStateLoading
+	modelStateLoadingReference
+	modelStateLoadingModules
+	modelStateLoadingCommits
+	modelStateLoadingCommitFileContents
 )
 
 type timeView int
@@ -214,12 +217,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case *modulev1.Resource_Module:
 			m.currentOwner = msg.requestedResource.Owner
 			m.currentModule = retrievedResource.Module.Name
-			m.state = modelStateLoading
+			m.state = modelStateLoadingCommits
 			return m, m.listCommits()
 		case *modulev1.Resource_Commit:
 			m.currentOwner = msg.requestedResource.Owner
 			m.currentModule = msg.requestedResource.Module
 			m.currentCommit = retrievedResource.Commit.Id
+			m.state = modelStateLoadingCommitFileContents
 			return m, m.getCommitContent(m.currentCommit)
 		case *modulev1.Resource_Label:
 			// TODO: Is this possible? I guess so?
@@ -346,7 +350,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Don't do anything.
 					return m, nil
 				}
-				m.state = modelStateLoading
+				m.state = modelStateLoadingCommits
 				m.currentModule = m.moduleTable.SelectedRow()[1] // module name row
 				return m, m.listCommits()
 			case modelStateBrowsingCommits:
@@ -354,7 +358,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Don't do anything.
 					return m, nil
 				}
-				m.state = modelStateLoading
+				m.state = modelStateLoadingCommitFileContents
 				m.currentCommit = m.commitsTable.SelectedRow()[0] // commit name row
 				return m, m.getCommitContent(m.currentCommit)
 			case modelStateBrowsingCommitContents:
@@ -374,14 +378,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// list populated, because we may have gone
 				// directly to a reference.
 				// TODO: Hook this up to caching.
-				m.state = modelStateLoading
+				m.state = modelStateLoadingCommits
 				return m, m.listCommits()
 			case modelStateBrowsingCommits:
 				// NOTE: We don't necessarily have the module
 				// list populated, because we may have gone
 				// directly to a reference.
 				// TODO: Hook this up to caching.
-				m.state = modelStateLoading
+				m.state = modelStateLoadingModules
 				return m, m.getModules()
 			}
 		case key.Matches(msg, m.keys.ToggleTimeView):
@@ -418,8 +422,14 @@ func (m model) View() string {
 	}
 	var view string
 	switch m.state {
-	case modelStateLoading:
-		view = m.spinner.View()
+	case modelStateLoadingModules:
+		view = m.spinner.View() + " Loading modules"
+	case modelStateLoadingCommits:
+		view = m.spinner.View() + " Loading commits"
+	case modelStateLoadingCommitFileContents:
+		view = m.spinner.View() + " Loading commit file contents"
+	case modelStateLoadingReference:
+		view = m.spinner.View() + " Loading reference"
 	case modelStateBrowsingModules:
 		header := fmt.Sprintf("Modules (Owner: %s)\n", m.currentOwner)
 		view = header
