@@ -470,6 +470,11 @@ func (m model) View() string {
 				Border(lipgloss.RoundedBorder(), true).
 				BorderForeground(bufBlue)
 			fileView = fileViewStyle.Render(fileView)
+		} else {
+			fileViewStyle := lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder(), true).
+				BorderForeground(bufTeal)
+			fileView = fileViewStyle.Render(fileView)
 		}
 		view = lipgloss.JoinHorizontal(
 			lipgloss.Top,
