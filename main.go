@@ -294,6 +294,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		commitFilesList.Styles = m.listStyles
 		m.commitFilesList = commitFilesList
 		m.fileViewport = viewport.New(100, max(viewportHeight, 30))
+		// Set up the initial viewport.
+		commitFileItem := m.commitFilesList.SelectedItem()
+		commitFile, ok := commitFileItem.(*commitFile)
+		if !ok {
+			panic("only commit files should be in commit files list")
+		}
+		selectedFileName := commitFile.underlying.Path
+		var fileContents string
+		for _, file := range m.currentCommitFiles {
+			if file.Path == selectedFileName {
+				fileContents = string(file.Content)
+				break
+			}
+		}
+		highlightedFile, err := highlightFile(selectedFileName, fileContents)
+		if err != nil {
+			m.err = fmt.Errorf("can't highlight file: %w", err)
+			return m, tea.Quit
+		}
+		m.fileViewport.SetContent(highlightedFile)
 		return m, nil
 
 	case errMsg:
@@ -390,6 +410,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commitList, cmd = m.commitList.Update(msg)
 	case modelStateBrowsingCommitContents:
 		m.commitFilesList, cmd = m.commitFilesList.Update(msg)
+		item := m.commitFilesList.SelectedItem()
+		commitFile, ok := item.(*commitFile)
+		if !ok {
+			panic("only commit files should be in item list")
+		}
+		selectedFileName := commitFile.underlying.Path
+		var fileContents string
+		for _, file := range m.currentCommitFiles {
+			if file.Path == selectedFileName {
+				fileContents = string(file.Content)
+				break
+			}
+		}
+		highlightedFile, err := highlightFile(selectedFileName, fileContents)
+		if err != nil {
+			m.err = fmt.Errorf("can't highlight file: %w", err)
+			return m, tea.Quit
+		}
+		m.fileViewport.SetContent(highlightedFile)
 	case modelStateBrowsingCommitFileContents:
 		m.fileViewport, cmd = m.fileViewport.Update(msg)
 	case modelStateSearching:
@@ -425,25 +464,6 @@ func (m model) View() string {
 			view += m.commitList.View()
 		}
 	case modelStateBrowsingCommitContents, modelStateBrowsingCommitFileContents:
-		item := m.commitFilesList.SelectedItem()
-		commitFile, ok := item.(*commitFile)
-		if !ok {
-			panic("only commit files should be in item list")
-		}
-		selectedFileName := commitFile.underlying.Path
-		var fileContents string
-		for _, file := range m.currentCommitFiles {
-			if file.Path == selectedFileName {
-				fileContents = string(file.Content)
-				break
-			}
-		}
-		highlightedFile, err := highlightFile(selectedFileName, fileContents)
-		if err != nil {
-			// TODO: Log and use the unhighlighted file contents?
-			return fmt.Sprintf("highlighting selected file %s: %s", selectedFileName, err)
-		}
-		m.fileViewport.SetContent(highlightedFile)
 		fileView := m.fileViewport.View()
 		if m.state == modelStateBrowsingCommitFileContents {
 			fileViewStyle := lipgloss.NewStyle().
