@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"os/user"
@@ -12,10 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/module/v1/modulev1connect"
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
-	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
-	"connectrpc.com/connect"
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
@@ -109,13 +105,11 @@ func run(_ context.Context) error {
 	model := model{
 		state:            initialState,
 		remote:           remote,
-		username:         username,
-		token:            token,
 		currentOwner:     username,
 		spinner:          spinner.New(),
 		listStyles:       listStyles,
 		listItemStyles:   listItemStyles,
-		httpClient:       httpClient,
+		client:           newClient(httpClient, username, token),
 		help:             help.New(),
 		keys:             keys,
 		currentReference: parsedReference,
@@ -154,12 +148,10 @@ const (
 type model struct {
 	// (Basically) Static
 	remote         string
-	username       string
-	token          string
 	listStyles     list.Styles
 	listItemStyles list.DefaultItemStyles
 	spinner        spinner.Model
-	httpClient     connect.HTTPClient
+	client         *client
 	keys           keyMap
 
 	// State - where are we?
@@ -187,7 +179,7 @@ type model struct {
 
 func (m model) Init() tea.Cmd {
 	if m.currentReference != nil {
-		return m.getResource(m.currentReference)
+		return m.client.getResource(m.remote, m.currentReference)
 	}
 	return nil
 }
@@ -205,13 +197,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.currentOwner = msg.requestedResource.Owner
 			m.currentModule = retrievedResource.Module.Name
 			m.state = modelStateLoadingCommits
-			return m, m.listCommits()
+			return m, m.client.listCommits(m.remote, m.currentOwner, m.currentModule)
 		case *modulev1.Resource_Commit:
 			m.currentOwner = msg.requestedResource.Owner
 			m.currentModule = msg.requestedResource.Module
 			m.currentCommit = retrievedResource.Commit.Id
 			m.state = modelStateLoadingCommitFileContents
-			return m, m.getCommitContent(m.currentCommit)
+			return m, m.client.getCommitContent(m.remote, m.currentOwner, m.currentModule, m.currentCommit)
 		case *modulev1.Resource_Label:
 			// TODO: Is this possible? I guess so?
 			// We don't handle it right now, though.
@@ -340,7 +332,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case modelStateSearching:
 				m.currentOwner = m.searchInput.Value()
 				// TODO: Clear search input?
-				return m, m.getModules()
+				return m, m.client.getModules(m.remote, m.currentOwner)
 			}
 			// enter or l are equivalent for all the cases below.
 			fallthrough
@@ -358,7 +350,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					panic("items in moduleList should be modules")
 				}
 				m.currentModule = module.underlying.Name
-				return m, m.listCommits()
+				return m, m.client.listCommits(m.remote, m.currentOwner, m.currentModule)
 			case modelStateBrowsingCommits:
 				if len(m.currentCommits) == 0 {
 					// Don't do anything.
@@ -371,7 +363,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					panic("items in commitList should be commits")
 				}
 				m.currentCommit = commit.underlying.Id
-				return m, m.getCommitContent(m.currentCommit)
+				return m, m.client.getCommitContent(m.remote, m.currentOwner, m.currentModule, m.currentCommit)
 			case modelStateBrowsingCommitContents:
 				m.state = modelStateBrowsingCommitFileContents
 				return m, nil
@@ -390,14 +382,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// directly to a reference.
 				// TODO: Hook this up to caching.
 				m.state = modelStateLoadingCommits
-				return m, m.listCommits()
+				return m, m.client.listCommits(m.remote, m.currentOwner, m.currentModule)
 			case modelStateBrowsingCommits:
 				// NOTE: We don't necessarily have the module
 				// list populated, because we may have gone
 				// directly to a reference.
 				// TODO: Hook this up to caching.
 				m.state = modelStateLoadingModules
-				return m, m.getModules()
+				return m, m.client.getModules(m.remote, m.currentOwner)
 			}
 		}
 	}
@@ -489,140 +481,6 @@ func (m model) View() string {
 	}
 	view += "\n\n" + m.help.View(m)
 	return view
-}
-
-type modulesMsg []*modulev1.Module
-
-func (m model) getModules() tea.Cmd {
-	return func() tea.Msg {
-		moduleServiceClient := modulev1connect.NewModuleServiceClient(
-			m.httpClient,
-			"https://"+m.remote,
-		)
-		request := connect.NewRequest(&modulev1.ListModulesRequest{
-			OwnerRefs: []*ownerv1.OwnerRef{
-				{
-					Value: &ownerv1.OwnerRef_Name{
-						Name: m.currentOwner,
-					},
-				},
-			},
-		})
-		setBasicAuthHeader(request, m.username, m.token)
-		response, err := moduleServiceClient.ListModules(context.Background(), request)
-		if err != nil {
-			return errMsg{fmt.Errorf("listing modules: %s", err)}
-		}
-		return modulesMsg(response.Msg.Modules)
-	}
-}
-
-type commitsMsg []*modulev1.Commit
-
-func (m model) listCommits() tea.Cmd {
-	return func() tea.Msg {
-		commitServiceClient := modulev1connect.NewCommitServiceClient(
-			m.httpClient,
-			"https://"+m.remote,
-		)
-		request := connect.NewRequest(&modulev1.ListCommitsRequest{
-			ResourceRef: &modulev1.ResourceRef{
-				Value: &modulev1.ResourceRef_Name_{
-					Name: &modulev1.ResourceRef_Name{
-						Owner:  m.currentOwner,
-						Module: m.currentModule,
-					},
-				},
-			},
-		})
-		setBasicAuthHeader(request, m.username, m.token)
-		response, err := commitServiceClient.ListCommits(context.Background(), request)
-		if err != nil {
-			return errMsg{fmt.Errorf("getting commits: %s", err)}
-		}
-		return commitsMsg(response.Msg.Commits)
-	}
-}
-
-type contentsMsg *modulev1.DownloadResponse_Content
-
-func (m model) getCommitContent(commitName string) tea.Cmd {
-	return func() tea.Msg {
-		downloadServiceClient := modulev1connect.NewDownloadServiceClient(
-			m.httpClient,
-			"https://"+m.remote,
-		)
-		request := connect.NewRequest(&modulev1.DownloadRequest{
-			Values: []*modulev1.DownloadRequest_Value{
-				{
-					ResourceRef: &modulev1.ResourceRef{
-						Value: &modulev1.ResourceRef_Name_{
-							Name: &modulev1.ResourceRef_Name{
-								Owner:  m.currentOwner,
-								Module: m.currentModule,
-								Child: &modulev1.ResourceRef_Name_Ref{
-									Ref: commitName,
-								},
-							},
-						},
-					},
-				},
-			},
-		})
-		setBasicAuthHeader(request, m.username, m.token)
-		response, err := downloadServiceClient.Download(context.Background(), request)
-		if err != nil {
-			return errMsg{fmt.Errorf("getting commit content: %s", err)}
-		}
-		if len(response.Msg.Contents) != 1 {
-			return errMsg{fmt.Errorf("requested 1 commit contents, got %v", len(response.Msg.Contents))}
-		}
-		return contentsMsg(response.Msg.Contents[0])
-	}
-}
-
-type resourceMsg struct {
-	// Avoid races with other commands by ensuring that we return the
-	// request with the response.
-	requestedResource *modulev1.ResourceRef_Name
-	retrievedResource *modulev1.Resource
-}
-
-func (m model) getResource(resourceName *modulev1.ResourceRef_Name) tea.Cmd {
-	return func() tea.Msg {
-		resourceServiceClient := modulev1connect.NewResourceServiceClient(
-			m.httpClient,
-			"https://"+m.remote,
-		)
-		request := connect.NewRequest(&modulev1.GetResourcesRequest{
-			ResourceRefs: []*modulev1.ResourceRef{
-				{
-					Value: &modulev1.ResourceRef_Name_{
-						Name: resourceName,
-					},
-				},
-			},
-		})
-		setBasicAuthHeader(request, m.username, m.token)
-		response, err := resourceServiceClient.GetResources(context.Background(), request)
-		if err != nil {
-			return errMsg{fmt.Errorf("getting resource: %s", err)}
-		}
-		if len(response.Msg.Resources) != 1 {
-			return errMsg{fmt.Errorf("requested 1 resource, got %v", len(response.Msg.Resources))}
-		}
-		return resourceMsg{
-			requestedResource: resourceName,
-			retrievedResource: response.Msg.Resources[0],
-		}
-	}
-}
-
-func setBasicAuthHeader(request connect.AnyRequest, username, token string) {
-	request.Header().Set(
-		"Authorization",
-		"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", username, token))),
-	)
 }
 
 type errMsg struct{ err error }
