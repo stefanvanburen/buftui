@@ -23,8 +23,8 @@ import (
 	"github.com/bufbuild/protovalidate-go"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -32,7 +32,6 @@ import (
 	"github.com/jdx/go-netrc"
 	"github.com/peterbourgon/ff/v4"
 	"github.com/peterbourgon/ff/v4/ffhelp"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func main() {
@@ -92,16 +91,12 @@ func run(_ context.Context) error {
 		return fmt.Errorf("token must be set, either by flag or in the ~/.netrc file")
 	}
 
-	tableStyles := table.DefaultStyles()
-	tableStyles.Header = tableStyles.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(bufBlue).
-		BorderBottom(true).
-		Bold(false)
-	tableStyles.Selected = tableStyles.Selected.
-		Foreground(bufTeal).
-		Background(bufBlue).
-		Bold(false)
+	listStyles := list.DefaultStyles()
+	listStyles.Title = listStyles.Title.Foreground(bufBlue).Background(bufTeal).Bold(true)
+
+	listItemStyles := list.NewDefaultItemStyles()
+	listItemStyles.SelectedTitle = listItemStyles.SelectedTitle.Foreground(bufBlue).BorderLeftForeground(bufBlue).Bold(true)
+	listItemStyles.SelectedDesc = listItemStyles.SelectedDesc.Foreground(bufBlue).BorderLeftForeground(bufBlue)
 
 	httpClient := httplb.NewClient()
 	defer httpClient.Close()
@@ -118,12 +113,12 @@ func run(_ context.Context) error {
 		token:            token,
 		currentOwner:     username,
 		spinner:          spinner.New(),
-		tableStyles:      tableStyles,
+		listStyles:       listStyles,
+		listItemStyles:   listItemStyles,
 		httpClient:       httpClient,
 		help:             help.New(),
 		keys:             keys,
 		currentReference: parsedReference,
-		timeView:         timeViewAbsolute,
 		searchInput:      newSearchInput(),
 	}
 
@@ -151,32 +146,24 @@ const (
 	modelStateLoadingCommitFileContents
 )
 
-type timeView int
-
-const (
-	timeViewAbsolute timeView = iota
-	timeViewRelative
-)
 const (
 	bufBlue = lipgloss.Color("#151fd5")
 	bufTeal = lipgloss.Color("#91dffb")
-
-	tuuidWidth = 32
 )
 
 type model struct {
 	// (Basically) Static
-	remote      string
-	username    string
-	token       string
-	tableStyles table.Styles
-	spinner     spinner.Model
-	httpClient  connect.HTTPClient
-	keys        keyMap
+	remote         string
+	username       string
+	token          string
+	listStyles     list.Styles
+	listItemStyles list.DefaultItemStyles
+	spinner        spinner.Model
+	httpClient     connect.HTTPClient
+	keys           keyMap
 
 	// State - where are we?
-	state    modelState
-	timeView timeView
+	state modelState
 	// Should exit when setting this.
 	err error
 
@@ -190,12 +177,12 @@ type model struct {
 	currentReference   *modulev1.ResourceRef_Name
 
 	// Sub-models
-	moduleTable      table.Model
-	commitsTable     table.Model
-	commitFilesTable table.Model
-	fileViewport     viewport.Model
-	searchInput      textinput.Model
-	help             help.Model
+	moduleList      list.Model
+	commitList      list.Model
+	commitFilesList list.Model
+	fileViewport    viewport.Model
+	searchInput     textinput.Model
+	help            help.Model
 }
 
 func (m model) Init() tea.Cmd {
@@ -234,30 +221,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = fmt.Errorf("cannot handle type resource of type %T", retrievedResource)
 			return m, tea.Quit
 		}
+
 	case modulesMsg:
 		m.state = modelStateBrowsingModules
 		m.currentModules = msg
 		if len(m.currentModules) == 0 {
 			return m, nil
 		}
-		columns := []table.Column{
-			// TODO: adjust these dynamically?
-			// NOTE: It seems like module.{Description,Url} are not
-			// currently widely populated; leaving those out
-			// deliberately.
-			{Title: "ID", Width: tuuidWidth},
-			{Title: "Name", Width: 20},
-			{Title: "Create Time", Width: 19},
-			{Title: "Visibility", Width: 10},
-			{Title: "State", Width: 10},
+		modules := make([]list.Item, len(m.currentModules))
+		for i, currentModule := range m.currentModules {
+			modules[i] = &module{currentModule}
 		}
-		m.moduleTable = table.New(
-			table.WithColumns(columns),
-			table.WithRows(m.formatModuleRows(m.currentModules)),
-			table.WithFocused(true),
-			table.WithHeight(len(m.currentModules)),
-			table.WithStyles(m.tableStyles),
+		delegate := list.NewDefaultDelegate()
+		delegate.Styles = m.listItemStyles
+		// TODO: Show module description.
+		delegate.ShowDescription = false
+		delegate.SetSpacing(0)
+		moduleList := list.New(
+			modules,
+			delegate,
+			100,                     // TODO: Figure out the width of the terminal?
+			len(m.currentModules)*4, // TODO: Pick a reasonable value here.
 		)
+		moduleList.Title = fmt.Sprintf("Modules (Owner: %s)", m.currentOwner)
+		moduleList.Styles = m.listStyles
+		m.moduleList = moduleList
 		return m, nil
 
 	case commitsMsg:
@@ -266,53 +254,46 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.currentCommits) == 0 {
 			return m, nil
 		}
-		columns := []table.Column{
-			// TODO: adjust these dynamically?
-			{Title: "ID", Width: tuuidWidth},
-			{Title: "Create Time", Width: 19},
-			// No need to make this too long - it's not really
-			// useful to consumers.
-			{Title: "b5 Digest", Width: 9},
-			// TODO: What else is useful here?
+		commits := make([]list.Item, len(m.currentCommits))
+		for i, currentCommit := range m.currentCommits {
+			commits[i] = &commit{currentCommit}
 		}
-		m.commitsTable = table.New(
-			table.WithColumns(columns),
-			table.WithRows(m.formatCommitRows(m.currentCommits)),
-			table.WithFocused(true),
-			table.WithHeight(len(msg)),
-			table.WithStyles(m.tableStyles),
+		delegate := list.NewDefaultDelegate()
+		delegate.Styles = m.listItemStyles
+		commitList := list.New(
+			commits,
+			delegate,
+			100,                     // TODO: Figure out the width of the terminal?
+			len(m.currentCommits)*4, // TODO: Pick a reasonable value here.
 		)
+		commitList.Title = fmt.Sprintf("Commits (Module: %s/%s)", m.currentOwner, m.currentModule)
+		commitList.Styles = m.listStyles
+		m.commitList = commitList
 		return m, nil
 
 	case contentsMsg:
-		// TODO: This is a stupid way to display files - eventually, improve it.
-		columns := []table.Column{
-			{Title: "Path", Width: 50},
-		}
-		rows := make([]table.Row, len(msg.Files))
-		// TODO: Cap this at something sane based on the terminal size?
-		tableHeight := len(msg.Files)
-		// This is probably not even possible?
-		if len(msg.Files) == 0 {
-			rows = append(rows, table.Row{
-				"No files found for commit",
-			})
-			tableHeight = 1
-		} else {
-			for i, file := range msg.Files {
-				rows[i] = table.Row{file.Path}
-			}
-		}
-		m.commitFilesTable = table.New(
-			table.WithColumns(columns),
-			table.WithRows(rows),
-			table.WithFocused(true),
-			table.WithHeight(tableHeight),
-			table.WithStyles(m.tableStyles),
-		)
 		m.state = modelStateBrowsingCommitContents
 		m.currentCommitFiles = msg.Files
-		m.fileViewport = viewport.New(100, max(tableHeight, 30))
+		viewportHeight := len(msg.Files)
+		commitFiles := make([]list.Item, len(m.currentCommitFiles))
+		for i, currentCommitFile := range m.currentCommitFiles {
+			commitFiles[i] = &commitFile{currentCommitFile}
+		}
+		delegate := list.NewDefaultDelegate()
+		delegate.Styles = m.listItemStyles
+		delegate.ShowDescription = false
+		delegate.SetSpacing(0)
+		commitFilesList := list.New(
+			commitFiles,
+			delegate,
+			100,
+			len(commitFiles)+8, // TODO: Pick a reasonable value here.
+		)
+		commitFilesList.Title = fmt.Sprintf("Commit %s (Module: %s/%s)", m.currentCommit, m.currentOwner, m.currentModule)
+		commitFilesList.SetShowStatusBar(false)
+		commitFilesList.Styles = m.listStyles
+		m.commitFilesList = commitFilesList
+		m.fileViewport = viewport.New(100, max(viewportHeight, 30))
 		return m, nil
 
 	case errMsg:
@@ -351,7 +332,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.state = modelStateLoadingCommits
-				m.currentModule = m.moduleTable.SelectedRow()[1] // module name row
+				item := m.moduleList.SelectedItem()
+				module, ok := item.(*module)
+				if !ok {
+					panic("items in moduleList should be modules")
+				}
+				m.currentModule = module.underlying.Name
 				return m, m.listCommits()
 			case modelStateBrowsingCommits:
 				if len(m.currentCommits) == 0 {
@@ -359,7 +345,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.state = modelStateLoadingCommitFileContents
-				m.currentCommit = m.commitsTable.SelectedRow()[0] // commit name row
+				item := m.commitList.SelectedItem()
+				commit, ok := item.(*commit)
+				if !ok {
+					panic("items in commitList should be commits")
+				}
+				m.currentCommit = commit.underlying.Id
 				return m, m.getCommitContent(m.currentCommit)
 			case modelStateBrowsingCommitContents:
 				m.state = modelStateBrowsingCommitFileContents
@@ -388,26 +379,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = modelStateLoadingModules
 				return m, m.getModules()
 			}
-		case key.Matches(msg, m.keys.ToggleTimeView):
-			if m.timeView == timeViewAbsolute {
-				m.timeView = timeViewRelative
-			} else {
-				m.timeView = timeViewAbsolute
-			}
-			m.moduleTable.SetRows(m.formatModuleRows(m.currentModules))
-			m.commitsTable.SetRows(m.formatCommitRows(m.currentCommits))
-			return m, nil
 		}
 	}
 
 	var cmd tea.Cmd
 	switch m.state {
 	case modelStateBrowsingModules:
-		m.moduleTable, cmd = m.moduleTable.Update(msg)
+		m.moduleList, cmd = m.moduleList.Update(msg)
 	case modelStateBrowsingCommits:
-		m.commitsTable, cmd = m.commitsTable.Update(msg)
+		m.commitList, cmd = m.commitList.Update(msg)
 	case modelStateBrowsingCommitContents:
-		m.commitFilesTable, cmd = m.commitFilesTable.Update(msg)
+		m.commitFilesList, cmd = m.commitFilesList.Update(msg)
 	case modelStateBrowsingCommitFileContents:
 		m.fileViewport, cmd = m.fileViewport.Update(msg)
 	case modelStateSearching:
@@ -431,23 +413,24 @@ func (m model) View() string {
 	case modelStateLoadingReference:
 		view = m.spinner.View() + " Loading reference"
 	case modelStateBrowsingModules:
-		header := fmt.Sprintf("Modules (Owner: %s)\n", m.currentOwner)
-		view = header
 		if len(m.currentModules) == 0 {
 			view += fmt.Sprintf("No modules found for owner; use %s to search for another owner", keys.Search.Keys())
 		} else {
-			view += m.moduleTable.View()
+			view += m.moduleList.View()
 		}
 	case modelStateBrowsingCommits:
-		header := fmt.Sprintf("Commits (Module: %s/%s)\n", m.currentOwner, m.currentModule)
-		view = header
 		if len(m.currentCommits) == 0 {
 			view += "No commits found for module"
 		} else {
-			view += m.commitsTable.View()
+			view += m.commitList.View()
 		}
 	case modelStateBrowsingCommitContents, modelStateBrowsingCommitFileContents:
-		selectedFileName := m.commitFilesTable.SelectedRow()[0]
+		item := m.commitFilesList.SelectedItem()
+		commitFile, ok := item.(*commitFile)
+		if !ok {
+			panic("only commit files should be in item list")
+		}
+		selectedFileName := commitFile.underlying.Path
 		var fileContents string
 		for _, file := range m.currentCommitFiles {
 			if file.Path == selectedFileName {
@@ -468,14 +451,10 @@ func (m model) View() string {
 				BorderForeground(bufBlue)
 			fileView = fileViewStyle.Render(fileView)
 		}
-		view = lipgloss.JoinVertical(
-			lipgloss.Left,
-			fmt.Sprintf("Commit %s (Module: %s/%s)\n", m.currentCommit, m.currentOwner, m.currentModule),
-			lipgloss.JoinHorizontal(
-				lipgloss.Top,
-				m.commitFilesTable.View(),
-				fileView,
-			),
+		view = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			m.commitFilesList.View(),
+			fileView,
 		)
 	case modelStateSearching:
 		header := "Search for an owner (user or organization)"
@@ -485,58 +464,6 @@ func (m model) View() string {
 	}
 	view += "\n\n" + m.help.View(m)
 	return view
-}
-
-func (m model) formatModuleRows(msg modulesMsg) []table.Row {
-	rows := make([]table.Row, len(msg))
-	for i, module := range msg {
-		var visibility string
-		switch module.Visibility {
-		case modulev1.ModuleVisibility_MODULE_VISIBILITY_PRIVATE:
-			visibility = "private"
-		case modulev1.ModuleVisibility_MODULE_VISIBILITY_PUBLIC:
-			visibility = "public"
-		default:
-			visibility = "unknown"
-		}
-		var state string
-		switch module.State {
-		case modulev1.ModuleState_MODULE_STATE_ACTIVE:
-			state = "active"
-		case modulev1.ModuleState_MODULE_STATE_DEPRECATED:
-			state = "deprecated"
-		default:
-			state = "unknown"
-		}
-		rows[i] = table.Row{
-			module.Id,
-			module.Name,
-			m.formatTimestamp(module.CreateTime),
-			visibility,
-			state,
-		}
-	}
-	return rows
-}
-
-func (m model) formatCommitRows(msg commitsMsg) []table.Row {
-	rows := make([]table.Row, len(msg))
-	for i, commit := range msg {
-		rows[i] = table.Row{
-			commit.Id,
-			m.formatTimestamp(commit.CreateTime),
-			fmt.Sprintf("%x", commit.Digest.Value),
-		}
-	}
-	return rows
-}
-
-func (m model) formatTimestamp(timestamp *timestamppb.Timestamp) string {
-	if m.timeView == timeViewAbsolute {
-		return timestamp.AsTime().Format(time.DateTime)
-	}
-	// AsTime() returns a Go time.Time in UTC; make sure now is in UTC.
-	return formatTimeAgo(time.Now().UTC(), timestamp.AsTime())
 }
 
 type modulesMsg []*modulev1.Module
@@ -786,58 +713,17 @@ func parseReference(reference string) (remote string, resourceRef *modulev1.Reso
 	return remote, moduleRef, nil
 }
 
-// formatTimeAgo returns a string representing an amount of time passed between
-// now and timestamp.
-func formatTimeAgo(now, timestamp time.Time) string {
-	if timestamp.After(now) {
-		// ??? - Let's not handle this case yet...
-		return "in the future"
-	}
-	if now.Equal(timestamp) {
-		return "now"
-	}
-	// Handle larger differences first.
-	if yearDifference := now.Year() - timestamp.Year(); yearDifference != 0 {
-		if yearDifference == 1 {
-			return "last year"
-		}
-		return fmt.Sprintf("%d years ago", yearDifference)
-	}
-	if monthDifference := now.Month() - timestamp.Month(); monthDifference != 0 {
-		if monthDifference == 1 {
-			return "last month"
-		}
-		return fmt.Sprintf("%d months ago", monthDifference)
-	}
-	if dayDifference := now.Day() - timestamp.Day(); dayDifference != 0 {
-		if dayDifference == 1 {
-			return "yesterday"
-		}
-		return fmt.Sprintf("%d days ago", dayDifference)
-	}
-	// Same date.
-	durationAgo := now.Sub(timestamp)
-	if durationAgo.Seconds() < 60 {
-		return "a few seconds ago"
-	}
-	if durationAgo.Minutes() < 60 {
-		return fmt.Sprintf("%d minutes ago", int(durationAgo.Minutes()))
-	}
-	return fmt.Sprintf("%d hours ago", int(durationAgo.Hours()))
-}
-
 // keyMap defines a set of keybindings. To work for help it must satisfy
 // key.Map. It could also very easily be a map[string]key.Binding.
 type keyMap struct {
-	Up             key.Binding
-	Down           key.Binding
-	Left           key.Binding
-	Right          key.Binding
-	Search         key.Binding
-	Enter          key.Binding
-	Help           key.Binding
-	Quit           key.Binding
-	ToggleTimeView key.Binding
+	Up     key.Binding
+	Down   key.Binding
+	Left   key.Binding
+	Right  key.Binding
+	Search key.Binding
+	Enter  key.Binding
+	Help   key.Binding
+	Quit   key.Binding
 }
 
 var keys = keyMap{
@@ -875,10 +761,6 @@ var keys = keyMap{
 		key.WithKeys("q", "esc", "ctrl+c"),
 		key.WithHelp("q", "quit"),
 	),
-	ToggleTimeView: key.NewBinding(
-		key.WithKeys("t"),
-		key.WithHelp("t", "toggle time view (absolute / relative)"),
-	),
 }
 
 func (m model) ShortHelp() []key.Binding {
@@ -891,16 +773,12 @@ func (m model) ShortHelp() []key.Binding {
 			// Can't go Right when no modules exist.
 			shortHelp = append(shortHelp, keys.Right)
 		}
-		// Always last.
-		shortHelp = append(shortHelp, keys.ToggleTimeView)
 	case modelStateBrowsingCommits, modelStateBrowsingCommitContents:
 		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left}
 		if len(m.currentCommits) == 0 {
 			// Can't go Right when no commits exist.
 			shortHelp = append(shortHelp, keys.Right)
 		}
-		// Always last.
-		shortHelp = append(shortHelp, keys.ToggleTimeView)
 	case modelStateBrowsingCommitFileContents:
 		// Can't go Right while browsing file contents; already at the "bottom".
 		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left}
@@ -917,7 +795,7 @@ func (m model) ShortHelp() []key.Binding {
 func (m model) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		m.ShortHelp(),
-		{keys.Search, keys.ToggleTimeView, keys.Help, keys.Quit},
+		{keys.Search, keys.Help, keys.Quit},
 	}
 }
 
@@ -934,4 +812,66 @@ func newSearchInput() textinput.Model {
 	searchInput.Placeholder = "bufbuild"
 	searchInput.Width = 20
 	return searchInput
+}
+
+type module struct {
+	underlying *modulev1.Module
+}
+
+// FilterValue implements list.Item.
+func (m *module) FilterValue() string {
+	return m.underlying.Name
+}
+
+// Title implements list.DefaultItem.
+func (m *module) Title() string {
+	// TODO: Incorporate visibility / state here?
+	return m.underlying.Name
+}
+
+// Description implements list.DefaultItem.
+func (m *module) Description() string {
+	// TODO: Show module description.
+	return m.underlying.Description
+}
+
+type commit struct {
+	underlying *modulev1.Commit
+}
+
+// FilterValue implements list.Item.
+func (m *commit) FilterValue() string {
+	// TODO: What to filter on?
+	return m.underlying.Id
+}
+
+// Title implements list.DefaultItem.
+func (m *commit) Title() string {
+	return m.underlying.Id
+}
+
+// Description implements list.DefaultItem.
+func (m *commit) Description() string {
+	// TODO: Support absolute/relative time.
+	return fmt.Sprintf("Create Time: %s", m.underlying.CreateTime.AsTime().Format(time.RFC3339Nano))
+}
+
+type commitFile struct {
+	underlying *modulev1.File
+}
+
+// FilterValue implements list.Item.
+func (m *commitFile) FilterValue() string {
+	return m.underlying.Path
+}
+
+// Title implements list.DefaultItem.
+func (m *commitFile) Title() string {
+	return m.underlying.Path
+}
+
+// Description implements list.DefaultItem.
+// The description for a commit file is not shown.
+func (m *commitFile) Description() string {
+	return ""
 }
