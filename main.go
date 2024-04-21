@@ -516,25 +516,16 @@ func highlightFile(filename, fileContents string) (string, error) {
 	// - Documentation files (markdown)
 	// - protobuf
 	// Ref: https://buf.build/bufbuild/registry/docs/main:buf.registry.module.v1#buf.registry.module.v1.FileType
-	lexer := lexers.Match(filename)
-	if lexer == nil {
-		// This happens for LICENSE files.
-		lexer = lexers.Fallback
-	}
+	// Fallback is for LICENSE files.
+	lexer := cmp.Or(lexers.Match(filename), lexers.Fallback)
 	// TODO: Make this configurable?
 	// Probably not ;)
-	style := styles.Get("algol_nu")
-	if style == nil {
-		style = styles.Fallback
-	}
+	style := cmp.Or(styles.Get("algol_nu"), styles.Fallback)
 	// TODO: This seemingly works on my terminal, but we may need
 	// to select a different one based on terminal type.
 	// I think we should be able to figure that out from
 	// tea/termenv, somehow.
-	formatter := formatters.TTY256
-	if formatter == nil {
-		formatter = formatters.Fallback
-	}
+	formatter := cmp.Or(formatters.TTY256, formatters.Fallback)
 	iterator, err := lexer.Tokenise(nil, fileContents)
 	if err != nil {
 		return "", fmt.Errorf("tokenizing file: %w", err)
