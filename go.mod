@@ -3,9 +3,9 @@ module github.com/stefanvanburen/buftui
 go 1.22.0
 
 require (
-	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.16.0-20240401180337-569d290ee4cc.1
+	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.16.1-20240401180337-569d290ee4cc.1
 	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.33.0-20240401180337-569d290ee4cc.1
-	connectrpc.com/connect v1.16.0
+	connectrpc.com/connect v1.16.1
 	github.com/alecthomas/chroma/v2 v2.13.0
 	github.com/bufbuild/httplb v0.1.0
 	github.com/bufbuild/protovalidate-go v0.6.1
