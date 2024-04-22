@@ -18,8 +18,8 @@ github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z
 github.com/atotto/clipboard v0.1.4/go.mod h1:ZY9tmq7sm5xIbd9bOK4onWV4S6X0u6GY7Vn0Yu86PYI=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1/go.mod h1:uYgXzlJ7ZpABp8OJ+exZzJJhRNQ2ASbcXHWsFqH8hp8=
-github.com/bufbuild/httplb v0.1.0 h1:V83jtq+svY293T62QSj+gH3SWAoaUKLfCKCiwb4a26g=
-github.com/bufbuild/httplb v0.1.0/go.mod h1:zeSE2XFTI4UsLOWoDppU2ZRRTJRPQ3Izs86Js9GbuNM=
+github.com/bufbuild/httplb v0.2.0 h1:DlpvtxfbYrG05jmIn3voxpMmVsRzOE/DodxChNydd6w=
+github.com/bufbuild/httplb v0.2.0/go.mod h1:zeSE2XFTI4UsLOWoDppU2ZRRTJRPQ3Izs86Js9GbuNM=
 github.com/bufbuild/protovalidate-go v0.6.1 h1:uzW8r0CDvqApUChNj87VzZVoQSKhcVdw5UWOE605UIw=
 github.com/bufbuild/protovalidate-go v0.6.1/go.mod h1:4BR3rKEJiUiTy+sqsusFn2ladOf0kYmA2Reo6BHSBgQ=
 github.com/charmbracelet/bubbles v0.18.0 h1:PYv1A036luoBGroX6VWjQIE9Syf2Wby2oOl/39KLfy0=
