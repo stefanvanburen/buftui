@@ -4,8 +4,8 @@ buf.build/gen/go/bufbuild/registry/connectrpc/go v1.16.0-20240401180337-569d290e
 buf.build/gen/go/bufbuild/registry/connectrpc/go v1.16.0-20240401180337-569d290ee4cc.1/go.mod h1:MzHMMXpVqHlHonJ0MO/6vsGs5YecgbT00xMiqsX95Jw=
 buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.33.0-20240401180337-569d290ee4cc.1 h1:rduOQ/RY9qzhulOuZzf8qVf5NQdCouxkGPDCa9i7I2w=
 buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.33.0-20240401180337-569d290ee4cc.1/go.mod h1:QaMbhE/4ewOcamSVi5sibAbSXpBQOjGfKfvwHxYLsE0=
-connectrpc.com/connect v1.16.0 h1:rdtfQjZ0OyFkWPTegBNcH7cwquGAN1WzyJy80oFNibg=
-connectrpc.com/connect v1.16.0/go.mod h1:XpZAduBQUySsb4/KO5JffORVkDI4B6/EYPi7N8xpNZw=
+connectrpc.com/connect v1.16.1 h1:rOdrK/RTI/7TVnn3JsVxt3n028MlTRwmK5Q4heSpjis=
+connectrpc.com/connect v1.16.1/go.mod h1:XpZAduBQUySsb4/KO5JffORVkDI4B6/EYPi7N8xpNZw=
 github.com/alecthomas/assert/v2 v2.6.0 h1:o3WJwILtexrEUk3cUVal3oiQY2tfgr/FHWiz/v2n4FU=
 github.com/alecthomas/assert/v2 v2.6.0/go.mod h1:Bze95FyfUr7x34QZrjL+XP+0qgp/zg8yS+TtBj1WA3k=
 github.com/alecthomas/chroma/v2 v2.13.0 h1:VP72+99Fb2zEcYM0MeaWJmV+xQvz5v5cxRHd+ooU1lI=
