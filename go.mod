@@ -8,7 +8,7 @@ require (
 	connectrpc.com/connect v1.16.1
 	github.com/alecthomas/chroma/v2 v2.13.0
 	github.com/bufbuild/httplb v0.2.0
-	github.com/bufbuild/protovalidate-go v0.6.1
+	github.com/bufbuild/protovalidate-go v0.6.2
 	github.com/charmbracelet/bubbles v0.18.0
 	github.com/charmbracelet/bubbletea v0.25.0
 	github.com/charmbracelet/lipgloss v0.10.0
