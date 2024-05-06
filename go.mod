@@ -7,7 +7,7 @@ require (
 	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.34.0-20240425212921-24cbc328cdd3.1
 	connectrpc.com/connect v1.16.1
 	github.com/alecthomas/chroma/v2 v2.13.0
-	github.com/bufbuild/httplb v0.2.1
+	github.com/bufbuild/httplb v0.3.0
 	github.com/bufbuild/protovalidate-go v0.6.2
 	github.com/charmbracelet/bubbles v0.18.0
 	github.com/charmbracelet/bubbletea v0.25.0
@@ -39,10 +39,10 @@ require (
 	github.com/sahilm/fuzzy v0.1.1-0.20230530133925-c48e322e2a8f // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
 	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8 // indirect
-	golang.org/x/net v0.21.0 // indirect
+	golang.org/x/net v0.23.0 // indirect
 	golang.org/x/sync v0.2.0 // indirect
-	golang.org/x/sys v0.17.0 // indirect
-	golang.org/x/term v0.17.0 // indirect
+	golang.org/x/sys v0.18.0 // indirect
+	golang.org/x/term v0.18.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240401170217-c3f982113cda // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240401170217-c3f982113cda // indirect
