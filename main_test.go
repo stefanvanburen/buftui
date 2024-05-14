@@ -65,12 +65,15 @@ func Test_parseReference(t *testing.T) {
 			wantError: false,
 		},
 	} {
-		gotRemote, gotResourceRef, gotErr := parseReference(tc.reference)
-		if tc.wantError {
-			attest.Error(t, gotErr)
-		} else {
-			attest.Equal(t, gotRemote, tc.wantRemote)
-			attest.Equal(t, gotResourceRef, tc.wantResourceRef, attest.Cmp(protocmp.Transform()))
-		}
+		t.Run("reference: "+tc.reference, func(t *testing.T) {
+			t.Parallel()
+			gotRemote, gotResourceRef, gotErr := parseReference(tc.reference)
+			if tc.wantError {
+				attest.Error(t, gotErr)
+			} else {
+				attest.Equal(t, gotRemote, tc.wantRemote)
+				attest.Equal(t, gotResourceRef, tc.wantResourceRef, attest.Cmp(protocmp.Transform()))
+			}
+		})
 	}
 }
