@@ -237,6 +237,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 		moduleList.Title = fmt.Sprintf("Modules (Owner: %s)", m.currentOwner)
 		moduleList.Styles = m.listStyles
+		moduleList.AdditionalFullHelpKeys = func() []key.Binding {
+			return []key.Binding{keys.Right}
+		}
+		moduleList.AdditionalShortHelpKeys = func() []key.Binding {
+			return []key.Binding{keys.Right}
+		}
 		m.moduleList = moduleList
 		return m, nil
 
@@ -260,6 +266,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 		commitList.Title = fmt.Sprintf("Commits (Module: %s/%s)", m.currentOwner, m.currentModule)
 		commitList.Styles = m.listStyles
+		commitList.AdditionalFullHelpKeys = func() []key.Binding {
+			return []key.Binding{keys.Left, keys.Right}
+		}
+		commitList.AdditionalShortHelpKeys = func() []key.Binding {
+			return []key.Binding{keys.Left, keys.Right}
+		}
 		m.commitList = commitList
 		return m, nil
 
@@ -284,6 +296,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		commitFilesList.Title = fmt.Sprintf("Commit %s (Module: %s/%s)", m.currentCommit, m.currentOwner, m.currentModule)
 		commitFilesList.SetShowStatusBar(false)
 		commitFilesList.Styles = m.listStyles
+		commitFilesList.AdditionalFullHelpKeys = func() []key.Binding {
+			return []key.Binding{keys.Left, keys.Right}
+		}
+		commitFilesList.AdditionalShortHelpKeys = func() []key.Binding {
+			return []key.Binding{keys.Left, keys.Right}
+		}
 		m.commitFilesList = commitFilesList
 		m.fileViewport = viewport.New(100, max(viewportHeight, 30))
 		// Set up the initial viewport.
@@ -476,10 +494,10 @@ func (m model) View() string {
 	case modelStateSearching:
 		header := "Search for an owner (user or organization)"
 		view = header + "\n\n" + m.searchInput.View()
+		view += "\n\n" + m.help.View(m)
 	default:
 		return fmt.Sprintf("unaccounted state: %v", m.state)
 	}
-	view += "\n\n" + m.help.View(m)
 	return view
 }
 
