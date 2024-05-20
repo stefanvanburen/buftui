@@ -1,11 +1,11 @@
 buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.34.1-20240401165935-b983156c5e99.1 h1:npqzxtoNbSdWs7XBDzqvqA1ANrQQGc8QpN0zFq9sVHA=
 buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.34.1-20240401165935-b983156c5e99.1/go.mod h1:XF+P8+RmfdufmIYpGUC+6bF7S+IlmHDEnCrO3OXaUAQ=
-buf.build/gen/go/bufbuild/registry/connectrpc/go v1.16.1-20240509133256-07734113bd09.1 h1:TbBKWN6IQ4Fqj7TxqQ47SxMTZscTFCt1Sdl+cmvY86c=
-buf.build/gen/go/bufbuild/registry/connectrpc/go v1.16.1-20240509133256-07734113bd09.1/go.mod h1:0P6maVkgxEtY4pjnqEY+M/U5DyzDUlD4X0cu49Xw0SM=
-buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.34.1-20240509133256-07734113bd09.1 h1:QLDwGlxqUtRp4FPW0rWToKsJC2zz+Aid1N5tVC6hnIE=
-buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.34.1-20240509133256-07734113bd09.1/go.mod h1:8ONhsyCTLQ9kBslWnMgPrXTcxzCkKlxZqN9ewUveui8=
-connectrpc.com/connect v1.16.1 h1:rOdrK/RTI/7TVnn3JsVxt3n028MlTRwmK5Q4heSpjis=
-connectrpc.com/connect v1.16.1/go.mod h1:XpZAduBQUySsb4/KO5JffORVkDI4B6/EYPi7N8xpNZw=
+buf.build/gen/go/bufbuild/registry/connectrpc/go v1.16.2-20240514010100-299bd9c9a0c4.1 h1:oCDoA3ci1SNjU+ZAh70E6LIpDtrIn+sHXFA9Kwp2qWE=
+buf.build/gen/go/bufbuild/registry/connectrpc/go v1.16.2-20240514010100-299bd9c9a0c4.1/go.mod h1:qOlHhXCDAWLWEoNzkgRu1gaWnCN94MS0fm4Kk7GoQAw=
+buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.34.1-20240514010100-299bd9c9a0c4.1 h1:zrXXp1IT3qukIKorguvnrw/JzxYttBrXzktUQGiQHqA=
+buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.34.1-20240514010100-299bd9c9a0c4.1/go.mod h1:8ONhsyCTLQ9kBslWnMgPrXTcxzCkKlxZqN9ewUveui8=
+connectrpc.com/connect v1.16.2 h1:ybd6y+ls7GOlb7Bh5C8+ghA6SvCBajHwxssO2CGFjqE=
+connectrpc.com/connect v1.16.2/go.mod h1:n2kgwskMHXC+lVqb18wngEpF95ldBHXjZYJussz5FRc=
 github.com/alecthomas/assert/v2 v2.6.0 h1:o3WJwILtexrEUk3cUVal3oiQY2tfgr/FHWiz/v2n4FU=
 github.com/alecthomas/assert/v2 v2.6.0/go.mod h1:Bze95FyfUr7x34QZrjL+XP+0qgp/zg8yS+TtBj1WA3k=
 github.com/alecthomas/chroma/v2 v2.13.0 h1:VP72+99Fb2zEcYM0MeaWJmV+xQvz5v5cxRHd+ooU1lI=
