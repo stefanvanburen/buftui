@@ -6,7 +6,7 @@ require (
 	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.16.2-20240514010100-299bd9c9a0c4.1
 	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.34.1-20240514010100-299bd9c9a0c4.1
 	connectrpc.com/connect v1.16.2
-	github.com/alecthomas/chroma/v2 v2.13.0
+	github.com/alecthomas/chroma/v2 v2.14.0
 	github.com/bufbuild/httplb v0.3.0
 	github.com/bufbuild/protovalidate-go v0.6.2
 	github.com/charmbracelet/bubbles v0.18.0
