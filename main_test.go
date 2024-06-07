@@ -1,9 +1,12 @@
 package main
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
+	"github.com/bufbuild/protovalidate-go"
 	"go.akshayshah.org/attest"
 	"google.golang.org/protobuf/testing/protocmp"
 )
@@ -11,10 +14,11 @@ import (
 func Test_parseReference(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		reference       string
-		wantRemote      string
-		wantResourceRef *modulev1.ResourceRef_Name
-		wantError       bool
+		reference           string
+		wantRemote          string
+		wantResourceRef     *modulev1.ResourceRef_Name
+		wantError           bool
+		wantValidationError bool
 	}{
 		{
 			reference:  "bufbuild/registry",
@@ -64,12 +68,28 @@ func Test_parseReference(t *testing.T) {
 			},
 			wantError: false,
 		},
+		{
+			reference: strings.Repeat("a", 33) + "/abc",
+			// Owner name too long, based on protovalidate rules.
+			wantError:           true,
+			wantValidationError: true,
+		},
+		{
+			reference: "abc/a",
+			// Repository name too short, based on protovalidate rules.
+			wantError:           true,
+			wantValidationError: true,
+		},
 	} {
 		t.Run("reference: "+tc.reference, func(t *testing.T) {
 			t.Parallel()
 			gotRemote, gotResourceRef, gotErr := parseReference(tc.reference)
 			if tc.wantError {
 				attest.Error(t, gotErr)
+				if tc.wantValidationError {
+					err := &protovalidate.ValidationError{}
+					attest.True(t, errors.As(gotErr, &err))
+				}
 			} else {
 				attest.Equal(t, gotRemote, tc.wantRemote)
 				attest.Equal(t, gotResourceRef, tc.wantResourceRef, attest.Cmp(protocmp.Transform()))
