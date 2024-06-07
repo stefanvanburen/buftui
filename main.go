@@ -104,12 +104,11 @@ func run(_ context.Context) error {
 
 	model := model{
 		state:            initialState,
-		remote:           remote,
 		currentOwner:     username,
 		spinner:          spinner.New(),
 		listStyles:       listStyles,
 		listItemStyles:   listItemStyles,
-		client:           newClient(httpClient, username, token),
+		client:           newClient(httpClient, remote, username, token),
 		help:             help.New(),
 		keys:             keys,
 		currentReference: parsedReference,
@@ -147,7 +146,6 @@ const (
 
 type model struct {
 	// (Basically) Static
-	remote         string
 	listStyles     list.Styles
 	listItemStyles list.DefaultItemStyles
 	spinner        spinner.Model
@@ -179,7 +177,7 @@ type model struct {
 
 func (m model) Init() tea.Cmd {
 	if m.currentReference != nil {
-		return m.client.getResource(m.remote, m.currentReference)
+		return m.client.getResource(m.currentReference)
 	}
 	return nil
 }
@@ -197,13 +195,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.currentOwner = msg.requestedResource.Owner
 			m.currentModule = retrievedResource.Module.Name
 			m.state = modelStateLoadingCommits
-			return m, m.client.listCommits(m.remote, m.currentOwner, m.currentModule)
+			return m, m.client.listCommits(m.currentOwner, m.currentModule)
 		case *modulev1.Resource_Commit:
 			m.currentOwner = msg.requestedResource.Owner
 			m.currentModule = msg.requestedResource.Module
 			m.currentCommit = retrievedResource.Commit.Id
 			m.state = modelStateLoadingCommitFileContents
-			return m, m.client.getCommitContent(m.remote, m.currentOwner, m.currentModule, m.currentCommit)
+			return m, m.client.getCommitContent(m.currentOwner, m.currentModule, m.currentCommit)
 		case *modulev1.Resource_Label:
 			// TODO: Is this possible? I guess so?
 			// We don't handle it right now, though.
@@ -350,7 +348,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case modelStateSearching:
 				m.currentOwner = m.searchInput.Value()
 				// TODO: Clear search input?
-				return m, m.client.getModules(m.remote, m.currentOwner)
+				return m, m.client.getModules(m.currentOwner)
 			}
 			// enter or l are equivalent for all the cases below.
 			fallthrough
@@ -368,7 +366,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					panic("items in moduleList should be modules")
 				}
 				m.currentModule = module.underlying.Name
-				return m, m.client.listCommits(m.remote, m.currentOwner, m.currentModule)
+				return m, m.client.listCommits(m.currentOwner, m.currentModule)
 			case modelStateBrowsingCommits:
 				if len(m.currentCommits) == 0 {
 					// Don't do anything.
@@ -381,7 +379,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					panic("items in commitList should be commits")
 				}
 				m.currentCommit = commit.underlying.Id
-				return m, m.client.getCommitContent(m.remote, m.currentOwner, m.currentModule, m.currentCommit)
+				return m, m.client.getCommitContent(m.currentOwner, m.currentModule, m.currentCommit)
 			case modelStateBrowsingCommitContents:
 				m.state = modelStateBrowsingCommitFileContents
 				return m, nil
@@ -400,14 +398,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// directly to a reference.
 				// TODO: Hook this up to caching.
 				m.state = modelStateLoadingCommits
-				return m, m.client.listCommits(m.remote, m.currentOwner, m.currentModule)
+				return m, m.client.listCommits(m.currentOwner, m.currentModule)
 			case modelStateBrowsingCommits:
 				// NOTE: We don't necessarily have the module
 				// list populated, because we may have gone
 				// directly to a reference.
 				// TODO: Hook this up to caching.
 				m.state = modelStateLoadingModules
-				return m, m.client.getModules(m.remote, m.currentOwner)
+				return m, m.client.getModules(m.currentOwner)
 			}
 		}
 	}

@@ -12,29 +12,29 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func newClient(httpClient connect.HTTPClient, username, token string) *client {
-	return &client{
-		httpClient: httpClient,
-		interceptors: []connect.Interceptor{
-			newAuthInterceptor(username, token),
-		},
-	}
+type client struct {
+	moduleServiceClient   modulev1connect.ModuleServiceClient
+	commitServiceClient   modulev1connect.CommitServiceClient
+	downloadServiceClient modulev1connect.DownloadServiceClient
+	resourceServiceClient modulev1connect.ResourceServiceClient
 }
 
-type client struct {
-	httpClient   connect.HTTPClient
-	interceptors []connect.Interceptor
+func newClient(httpClient connect.HTTPClient, remote, username, token string) *client {
+	authInterceptor := newAuthInterceptor(username, token)
+	options := connect.WithInterceptors(authInterceptor)
+	address := "https://" + remote
+	return &client{
+		moduleServiceClient:   modulev1connect.NewModuleServiceClient(httpClient, address, options),
+		commitServiceClient:   modulev1connect.NewCommitServiceClient(httpClient, address, options),
+		downloadServiceClient: modulev1connect.NewDownloadServiceClient(httpClient, address, options),
+		resourceServiceClient: modulev1connect.NewResourceServiceClient(httpClient, address, options),
+	}
 }
 
 type modulesMsg []*modulev1.Module
 
-func (c *client) getModules(remote, currentOwner string) tea.Cmd {
+func (c *client) getModules(currentOwner string) tea.Cmd {
 	return func() tea.Msg {
-		moduleServiceClient := modulev1connect.NewModuleServiceClient(
-			c.httpClient,
-			"https://"+remote,
-			connect.WithInterceptors(c.interceptors...),
-		)
 		request := connect.NewRequest(&modulev1.ListModulesRequest{
 			OwnerRefs: []*ownerv1.OwnerRef{
 				{
@@ -44,7 +44,7 @@ func (c *client) getModules(remote, currentOwner string) tea.Cmd {
 				},
 			},
 		})
-		response, err := moduleServiceClient.ListModules(context.Background(), request)
+		response, err := c.moduleServiceClient.ListModules(context.Background(), request)
 		if err != nil {
 			return errMsg{fmt.Errorf("listing modules: %s", err)}
 		}
@@ -54,13 +54,8 @@ func (c *client) getModules(remote, currentOwner string) tea.Cmd {
 
 type commitsMsg []*modulev1.Commit
 
-func (c *client) listCommits(remote, currentOwner, currentModule string) tea.Cmd {
+func (c *client) listCommits(currentOwner, currentModule string) tea.Cmd {
 	return func() tea.Msg {
-		commitServiceClient := modulev1connect.NewCommitServiceClient(
-			c.httpClient,
-			"https://"+remote,
-			connect.WithInterceptors(c.interceptors...),
-		)
 		request := connect.NewRequest(&modulev1.ListCommitsRequest{
 			ResourceRef: &modulev1.ResourceRef{
 				Value: &modulev1.ResourceRef_Name_{
@@ -71,7 +66,7 @@ func (c *client) listCommits(remote, currentOwner, currentModule string) tea.Cmd
 				},
 			},
 		})
-		response, err := commitServiceClient.ListCommits(context.Background(), request)
+		response, err := c.commitServiceClient.ListCommits(context.Background(), request)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting commits: %s", err)}
 		}
@@ -81,13 +76,8 @@ func (c *client) listCommits(remote, currentOwner, currentModule string) tea.Cmd
 
 type contentsMsg *modulev1.DownloadResponse_Content
 
-func (c *client) getCommitContent(remote, currentOwner, currentModule, commitName string) tea.Cmd {
+func (c *client) getCommitContent(currentOwner, currentModule, commitName string) tea.Cmd {
 	return func() tea.Msg {
-		downloadServiceClient := modulev1connect.NewDownloadServiceClient(
-			c.httpClient,
-			"https://"+remote,
-			connect.WithInterceptors(c.interceptors...),
-		)
 		request := connect.NewRequest(&modulev1.DownloadRequest{
 			Values: []*modulev1.DownloadRequest_Value{
 				{
@@ -105,7 +95,7 @@ func (c *client) getCommitContent(remote, currentOwner, currentModule, commitNam
 				},
 			},
 		})
-		response, err := downloadServiceClient.Download(context.Background(), request)
+		response, err := c.downloadServiceClient.Download(context.Background(), request)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting commit content: %s", err)}
 		}
@@ -123,13 +113,8 @@ type resourceMsg struct {
 	retrievedResource *modulev1.Resource
 }
 
-func (c *client) getResource(remote string, resourceName *modulev1.ResourceRef_Name) tea.Cmd {
+func (c *client) getResource(resourceName *modulev1.ResourceRef_Name) tea.Cmd {
 	return func() tea.Msg {
-		resourceServiceClient := modulev1connect.NewResourceServiceClient(
-			c.httpClient,
-			"https://"+remote,
-			connect.WithInterceptors(c.interceptors...),
-		)
 		request := connect.NewRequest(&modulev1.GetResourcesRequest{
 			ResourceRefs: []*modulev1.ResourceRef{
 				{
@@ -139,7 +124,7 @@ func (c *client) getResource(remote string, resourceName *modulev1.ResourceRef_N
 				},
 			},
 		})
-		response, err := resourceServiceClient.GetResources(context.Background(), request)
+		response, err := c.resourceServiceClient.GetResources(context.Background(), request)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting resource: %s", err)}
 		}
