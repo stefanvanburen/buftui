@@ -93,6 +93,7 @@ func run(_ context.Context) error {
 	listItemStyles := list.NewDefaultItemStyles()
 	listItemStyles.SelectedTitle = listItemStyles.SelectedTitle.Foreground(bufBlue).BorderLeftForeground(bufBlue).Bold(true)
 	listItemStyles.SelectedDesc = listItemStyles.SelectedDesc.Foreground(bufBlue).BorderLeftForeground(bufBlue)
+	listItemStyles.NormalTitle = listItemStyles.NormalTitle.Foreground(bufBlue)
 
 	httpClient := httplb.NewClient()
 	defer httpClient.Close()
