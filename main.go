@@ -176,10 +176,11 @@ type model struct {
 }
 
 func (m model) Init() tea.Cmd {
+	inits := []tea.Cmd{m.spinner.Tick}
 	if m.currentReference != nil {
-		return m.client.getResource(m.currentReference)
+		inits = append(inits, m.client.getResource(m.currentReference))
 	}
-	return nil
+	return tea.Batch(inits...)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -441,6 +442,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fileViewport, cmd = m.fileViewport.Update(msg)
 	case modelStateSearching:
 		m.searchInput, cmd = m.searchInput.Update(msg)
+	default:
+		m.spinner, cmd = m.spinner.Update(msg)
 	}
 	return m, cmd
 }
