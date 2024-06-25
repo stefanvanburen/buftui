@@ -260,8 +260,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		commitList := list.New(
 			commits,
 			delegate,
-			100,                     // TODO: Figure out the width of the terminal?
-			len(m.currentCommits)*4, // TODO: Pick a reasonable value here.
+			100, // TODO: Figure out the width of the terminal?
+			// 5 seems to avoid automatic pagination.
+			len(m.currentCommits)*5,
 		)
 		commitList.Title = fmt.Sprintf("Commits (Module: %s/%s)", m.currentOwner, m.currentModule)
 		commitList.Styles = m.listStyles
