@@ -410,6 +410,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.client.getModules(m.currentOwner)
 			}
 		}
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	}
 
 	var cmd tea.Cmd
@@ -443,8 +447,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fileViewport, cmd = m.fileViewport.Update(msg)
 	case modelStateSearching:
 		m.searchInput, cmd = m.searchInput.Update(msg)
-	default:
-		m.spinner, cmd = m.spinner.Update(msg)
 	}
 	return m, cmd
 }
