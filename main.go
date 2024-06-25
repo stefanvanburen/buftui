@@ -105,7 +105,7 @@ func run(_ context.Context) error {
 	model := model{
 		state:            initialState,
 		currentOwner:     username,
-		spinner:          spinner.New(),
+		spinner:          spinner.New(spinner.WithSpinner(spinner.Dot)),
 		listStyles:       listStyles,
 		listItemStyles:   listItemStyles,
 		client:           newClient(httpClient, remote, username, token),
