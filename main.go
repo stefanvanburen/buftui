@@ -103,6 +103,49 @@ func run(_ context.Context) error {
 		initialState = modelStateLoadingReference
 	}
 
+	defaultWidth, defaultHeight := 100, 20
+
+	var moduleList list.Model
+	{
+		delegate := list.NewDefaultDelegate()
+		delegate.Styles = listItemStyles
+		// TODO: Show module description.
+		delegate.ShowDescription = false
+		delegate.SetSpacing(0)
+		moduleList = list.New(
+			nil,
+			delegate,
+			defaultWidth, // TODO: Figure out the width of the terminal?
+			defaultHeight,
+		)
+	}
+
+	var commitList list.Model
+	{
+		delegate := list.NewDefaultDelegate()
+		delegate.Styles = listItemStyles
+		commitList = list.New(
+			nil,
+			delegate,
+			defaultWidth, // TODO: Figure out the width of the terminal?
+			defaultHeight,
+		)
+	}
+
+	var commitFilesList list.Model
+	{
+		delegate := list.NewDefaultDelegate()
+		delegate.Styles = listItemStyles
+		delegate.ShowDescription = false
+		delegate.SetSpacing(0)
+		commitFilesList = list.New(
+			nil,
+			delegate,
+			defaultWidth,
+			defaultHeight, // TODO: Pick a reasonable value here.
+		)
+	}
+
 	model := model{
 		state:            initialState,
 		currentOwner:     username,
@@ -114,6 +157,10 @@ func run(_ context.Context) error {
 		keys:             keys,
 		currentReference: parsedReference,
 		searchInput:      newSearchInput(),
+
+		commitList:      commitList,
+		moduleList:      moduleList,
+		commitFilesList: commitFilesList,
 	}
 
 	var options []tea.ProgramOption
@@ -224,26 +271,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, currentModule := range m.currentModules {
 			modules[i] = &module{currentModule}
 		}
-		delegate := list.NewDefaultDelegate()
-		delegate.Styles = m.listItemStyles
-		// TODO: Show module description.
-		delegate.ShowDescription = false
-		delegate.SetSpacing(0)
-		moduleList := list.New(
-			modules,
-			delegate,
-			100,                     // TODO: Figure out the width of the terminal?
-			len(m.currentModules)*4, // TODO: Pick a reasonable value here.
-		)
-		moduleList.Title = fmt.Sprintf("Modules (Owner: %s)", m.currentOwner)
-		moduleList.Styles = m.listStyles
-		moduleList.AdditionalFullHelpKeys = func() []key.Binding {
+		m.moduleList.SetHeight(len(m.currentModules) * 4) // TODO: Pick a reasonable value here.
+		m.moduleList.SetItems(modules)
+		m.moduleList.Title = fmt.Sprintf("Modules (Owner: %s)", m.currentOwner)
+		m.moduleList.Styles = m.listStyles
+		m.moduleList.AdditionalFullHelpKeys = func() []key.Binding {
 			return []key.Binding{keys.Right}
 		}
-		moduleList.AdditionalShortHelpKeys = func() []key.Binding {
+		m.moduleList.AdditionalShortHelpKeys = func() []key.Binding {
 			return []key.Binding{keys.Right}
 		}
-		m.moduleList = moduleList
 		return m, nil
 
 	case commitsMsg:
@@ -256,55 +293,37 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, currentCommit := range m.currentCommits {
 			commits[i] = &commit{currentCommit}
 		}
-		delegate := list.NewDefaultDelegate()
-		delegate.Styles = m.listItemStyles
-		commitList := list.New(
-			commits,
-			delegate,
-			100, // TODO: Figure out the width of the terminal?
-			// 5 seems to avoid automatic pagination.
-			len(m.currentCommits)*5,
-		)
-		commitList.Title = fmt.Sprintf("Commits (Module: %s/%s)", m.currentOwner, m.currentModule)
-		commitList.Styles = m.listStyles
-		commitList.AdditionalFullHelpKeys = func() []key.Binding {
+		m.commitList.SetHeight(len(m.currentCommits) * 5)
+		m.commitList.SetItems(commits)
+		m.commitList.Title = fmt.Sprintf("Commits (Module: %s/%s)", m.currentOwner, m.currentModule)
+		m.commitList.Styles = m.listStyles
+		m.commitList.AdditionalFullHelpKeys = func() []key.Binding {
 			return []key.Binding{keys.Left, keys.Right}
 		}
-		commitList.AdditionalShortHelpKeys = func() []key.Binding {
+		m.commitList.AdditionalShortHelpKeys = func() []key.Binding {
 			return []key.Binding{keys.Left, keys.Right}
 		}
-		m.commitList = commitList
 		return m, nil
 
 	case contentsMsg:
 		m.state = modelStateBrowsingCommitContents
 		m.currentCommitFiles = msg.Files
-		viewportHeight := len(msg.Files)
 		commitFiles := make([]list.Item, len(m.currentCommitFiles))
 		for i, currentCommitFile := range m.currentCommitFiles {
 			commitFiles[i] = &commitFile{currentCommitFile}
 		}
-		delegate := list.NewDefaultDelegate()
-		delegate.Styles = m.listItemStyles
-		delegate.ShowDescription = false
-		delegate.SetSpacing(0)
-		commitFilesList := list.New(
-			commitFiles,
-			delegate,
-			100,
-			len(commitFiles)+8, // TODO: Pick a reasonable value here.
-		)
-		commitFilesList.Title = fmt.Sprintf("Commit %s (Module: %s/%s)", m.currentCommit, m.currentOwner, m.currentModule)
-		commitFilesList.SetShowStatusBar(false)
-		commitFilesList.Styles = m.listStyles
-		commitFilesList.AdditionalFullHelpKeys = func() []key.Binding {
+		m.commitFilesList.SetHeight(len(commitFiles) + 8) // TODO: Pick a reasonable value here.
+		m.commitFilesList.SetItems(commitFiles)
+		m.commitFilesList.Title = fmt.Sprintf("Commit %s (Module: %s/%s)", m.currentCommit, m.currentOwner, m.currentModule)
+		m.commitFilesList.SetShowStatusBar(false)
+		m.commitFilesList.Styles = m.listStyles
+		m.commitFilesList.AdditionalFullHelpKeys = func() []key.Binding {
 			return []key.Binding{keys.Left, keys.Right}
 		}
-		commitFilesList.AdditionalShortHelpKeys = func() []key.Binding {
+		m.commitFilesList.AdditionalShortHelpKeys = func() []key.Binding {
 			return []key.Binding{keys.Left, keys.Right}
 		}
-		m.commitFilesList = commitFilesList
-		m.fileViewport = viewport.New(100, max(viewportHeight, 30))
+		m.fileViewport = viewport.New(100, max(len(msg.Files), 30))
 		// Set up the initial viewport.
 		commitFileItem := m.commitFilesList.SelectedItem()
 		commitFile, ok := commitFileItem.(*commitFile)
