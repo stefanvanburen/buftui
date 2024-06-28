@@ -25,6 +25,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/cli/browser"
 	"github.com/jdx/go-netrc"
 	"github.com/peterbourgon/ff/v4"
 	"github.com/peterbourgon/ff/v4/ffhelp"
@@ -157,6 +158,7 @@ func run(_ context.Context) error {
 		keys:             keys,
 		currentReference: parsedReference,
 		searchInput:      newSearchInput(),
+		remote:           remote,
 
 		commitList:      commitList,
 		moduleList:      moduleList,
@@ -199,6 +201,7 @@ type model struct {
 	spinner        spinner.Model
 	client         *client
 	keys           keyMap
+	remote         string
 
 	// State - where are we?
 	state modelState
@@ -429,6 +432,50 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = modelStateLoadingModules
 				return m, m.client.getModules(m.currentOwner)
 			}
+		case key.Matches(msg, m.keys.Browse):
+			var url string
+			var list list.Model
+			switch m.state {
+			case modelStateBrowsingCommitFileContents:
+				list = m.commitFilesList
+				// TODO: Can we go directly to the line that the user is viewing?
+				// For now, do the same as modelStateBrowsingCommitContents.
+				commitFile, ok := m.commitFilesList.SelectedItem().(*commitFile)
+				if !ok {
+					panic("selected item is not a commitFile")
+				}
+				url = "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule + "/file/" + m.currentCommit + ":" + commitFile.underlying.Path
+			case modelStateBrowsingCommitContents:
+				list = m.commitFilesList
+				commitFile, ok := m.commitFilesList.SelectedItem().(*commitFile)
+				if !ok {
+					panic("selected item is not a commitFile")
+				}
+				url = "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule + "/file/" + m.currentCommit + ":" + commitFile.underlying.Path
+			case modelStateBrowsingCommits:
+				list = m.commitList
+				commit, ok := m.commitList.SelectedItem().(*commit)
+				if !ok {
+					panic("selected item is not a commit")
+				}
+				url = "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule + "/tree/" + commit.underlying.Id
+			case modelStateBrowsingModules:
+				list = m.moduleList
+				module, ok := m.moduleList.SelectedItem().(*module)
+				if !ok {
+					panic("selected item is not a module")
+				}
+				url = "https://" + m.remote + "/" + m.currentOwner + "/" + module.underlying.Name
+			}
+
+			if url != "" {
+				if err := browser.OpenURL(url); err != nil {
+					m.err = fmt.Errorf("opening URL %q: %w", url, err)
+					return m, nil
+				}
+				// TODO: Where does this show? Does it need more time?
+				return m, list.NewStatusMessage("opened " + url)
+			}
 		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -640,6 +687,7 @@ type keyMap struct {
 	Enter  key.Binding
 	Help   key.Binding
 	Quit   key.Binding
+	Browse key.Binding
 }
 
 var keys = keyMap{
@@ -676,6 +724,10 @@ var keys = keyMap{
 	Quit: key.NewBinding(
 		key.WithKeys("q", "esc", "ctrl+c"),
 		key.WithHelp("q", "quit"),
+	),
+	Browse: key.NewBinding(
+		key.WithKeys("o"),
+		key.WithHelp("o", "open in browser"),
 	),
 }
 
