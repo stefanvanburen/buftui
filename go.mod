@@ -4,7 +4,7 @@ go 1.22.0
 
 require (
 	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.16.2-20240821192916-45ba72cdd479.1
-	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.34.2-20240801134127-09fbc17f7c9e.2
+	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.34.2-20240821192916-45ba72cdd479.2
 	connectrpc.com/connect v1.16.2
 	github.com/alecthomas/chroma/v2 v2.14.0
 	github.com/bufbuild/httplb v0.3.0
