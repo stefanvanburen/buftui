@@ -1,6 +1,6 @@
 module github.com/stefanvanburen/buftui
 
-go 1.22.0
+go 1.23.0
 
 require (
 	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.16.2-20240821192916-45ba72cdd479.1
