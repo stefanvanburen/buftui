@@ -534,7 +534,7 @@ func (m model) View() string {
 		view = m.spinner.View() + " Loading reference"
 	case modelStateBrowsingModules:
 		if len(m.currentModules) == 0 {
-			view += fmt.Sprintf("No modules found for owner; use %s to search for another owner", keys.Search.Keys())
+			view += fmt.Sprintf("No modules found for owner; use %s to enter another owner", keys.Search.Keys())
 		} else {
 			view += m.moduleList.View()
 		}
@@ -563,7 +563,7 @@ func (m model) View() string {
 			fileView,
 		)
 	case modelStateSearching:
-		header := "Search for an owner (user or organization)"
+		header := "Enter an owner (user or organization)"
 		view = header + "\n\n" + m.searchInput.View()
 		view += "\n\n" + m.help.View(m)
 	default:
@@ -711,7 +711,7 @@ var keys = keyMap{
 	),
 	Search: key.NewBinding(
 		key.WithKeys("s"),
-		key.WithHelp("s", "search for owner"),
+		key.WithHelp("s", "enter owner"),
 	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
