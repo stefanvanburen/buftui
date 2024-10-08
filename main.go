@@ -664,11 +664,7 @@ func parseReference(reference string) (remote string, resourceRef *modulev1.Reso
 			Ref: reference,
 		}
 	}
-	validator, err := protovalidate.New()
-	if err != nil {
-		return "", nil, fmt.Errorf("creating new protovalidator: %w", err)
-	}
-	if err := validator.Validate(moduleRef); err != nil {
+	if err := protovalidate.Validate(moduleRef); err != nil {
 		return "", nil, fmt.Errorf("validating reference: %w", err)
 	}
 	// TODO: Validate remote
