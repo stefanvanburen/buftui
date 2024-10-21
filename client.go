@@ -21,7 +21,10 @@ type client struct {
 
 func newClient(httpClient connect.HTTPClient, remote, username, token string) *client {
 	authInterceptor := newAuthInterceptor(username, token)
-	options := connect.WithInterceptors(authInterceptor)
+	options := connect.WithClientOptions(
+		connect.WithInterceptors(authInterceptor),
+		connect.WithHTTPGet(),
+	)
 	address := "https://" + remote
 	return &client{
 		moduleServiceClient:   modulev1connect.NewModuleServiceClient(httpClient, address, options),
