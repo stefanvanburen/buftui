@@ -1,9 +1,9 @@
-buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.34.2-20240920164238-5a7b106cbb87.2 h1:hl0FrmGlNpQZIGvU1/jDz0lsPDd0BhCE0QDRwPfLZcA=
-buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.34.2-20240920164238-5a7b106cbb87.2/go.mod h1:ylS4c28ACSI59oJrOdW4pHS4n0Hw4TgSPHn8rpHl4Yw=
+buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.35.1-20240401165935-b983156c5e99.1 h1:BhxFireYuJYNn4uN9gEWQNSBRLRF8wcVNAoTKcz/qEE=
+buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.35.1-20240401165935-b983156c5e99.1/go.mod h1:Duw/9JoXkXIydyASnLYIiufkzySThoqavOsF+IihqvM=
 buf.build/gen/go/bufbuild/registry/connectrpc/go v1.17.0-20241007185750-f2282fe532fe.1 h1:tVBsEQVsOz3Xsoy90GOefAgn6siKtfFZxsst39/hJNU=
 buf.build/gen/go/bufbuild/registry/connectrpc/go v1.17.0-20241007185750-f2282fe532fe.1/go.mod h1:of6bEOQJUQbBMVsPiLQiyD+yPRze0FClQv2u1CmgDdQ=
-buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.34.2-20241007185750-f2282fe532fe.2 h1:B9EMC8wt++YwOuvFnn12zqlfj7ceJoiUHYfCaAj3IIc=
-buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.34.2-20241007185750-f2282fe532fe.2/go.mod h1:psseUmlKRo9v5LZJtR/aTpdTLuyp9o3X7rnLT87SZEo=
+buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.35.1-20241007185750-f2282fe532fe.1 h1:jvB3uNDZnP89xIFy8WHeYgCz86vv7mWRyv2Wgp+8hoI=
+buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.35.1-20241007185750-f2282fe532fe.1/go.mod h1:wDNiJdkMLOTfEL3o1lBgh+9EVhwGORcz+Aoq6hGk33Y=
 connectrpc.com/connect v1.17.0 h1:W0ZqMhtVzn9Zhn2yATuUokDLO5N+gIuBWMOnsQrfmZk=
 connectrpc.com/connect v1.17.0/go.mod h1:0292hj1rnx8oFrStN7cB4jjVBeqs+Yx5yDIC2prWDO8=
 github.com/alecthomas/assert/v2 v2.7.0 h1:QtqSACNS3tF7oasA8CU6A6sXZSBDqnm7RfpLl9bZqbE=
