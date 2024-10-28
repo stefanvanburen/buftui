@@ -1,9 +1,9 @@
-buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.34.2-20240920164238-5a7b106cbb87.2 h1:hl0FrmGlNpQZIGvU1/jDz0lsPDd0BhCE0QDRwPfLZcA=
-buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.34.2-20240920164238-5a7b106cbb87.2/go.mod h1:ylS4c28ACSI59oJrOdW4pHS4n0Hw4TgSPHn8rpHl4Yw=
+buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.35.1-20240401165935-b983156c5e99.1 h1:BhxFireYuJYNn4uN9gEWQNSBRLRF8wcVNAoTKcz/qEE=
+buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.35.1-20240401165935-b983156c5e99.1/go.mod h1:Duw/9JoXkXIydyASnLYIiufkzySThoqavOsF+IihqvM=
 buf.build/gen/go/bufbuild/registry/connectrpc/go v1.17.0-20241025140216-aa40f2c93090.1 h1:FHQXg3T7S2jp8yc7/bQJgqEH1yza/rrDHXITUK2Tm0g=
 buf.build/gen/go/bufbuild/registry/connectrpc/go v1.17.0-20241025140216-aa40f2c93090.1/go.mod h1:5iwF5l+9lKCnvr1zLvDgUHrv6X+vU5nNPjvig1sbnao=
-buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.34.2-20241025140216-aa40f2c93090.2 h1:HtkwweSwcCZ6W3v71KOWGCluSNkAvewEq+3XDDjDE98=
-buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.34.2-20241025140216-aa40f2c93090.2/go.mod h1:2tG7Bvc+QCrzKwyxxOnP0BzS77EQC5HsuwSP0f812U4=
+buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.35.1-20241025140216-aa40f2c93090.1 h1:PyqnJojY+BXNuJHp5aEfN9wPiP1dzrobXVmgLrUMe+A=
+buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.35.1-20241025140216-aa40f2c93090.1/go.mod h1:x5Mti5bhMO87zJxCkcEbr7Lz+bHiFsqpxnpqSB1okG0=
 connectrpc.com/connect v1.17.0 h1:W0ZqMhtVzn9Zhn2yATuUokDLO5N+gIuBWMOnsQrfmZk=
 connectrpc.com/connect v1.17.0/go.mod h1:0292hj1rnx8oFrStN7cB4jjVBeqs+Yx5yDIC2prWDO8=
 github.com/alecthomas/assert/v2 v2.7.0 h1:QtqSACNS3tF7oasA8CU6A6sXZSBDqnm7RfpLl9bZqbE=
