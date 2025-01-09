@@ -594,8 +594,13 @@ func getUserTokenFromNetrc(remote string) (username string, token string, err er
 	if err != nil {
 		return "", "", fmt.Errorf("parsing netrc: %s", err)
 	}
-	username = parsedNetrc.Machine(remote).Get("login")
-	token = parsedNetrc.Machine(remote).Get("password")
+	netrcRemote := parsedNetrc.Machine(remote)
+	if netrcRemote == nil {
+		// We don't have the remote in the .netrc; abort.
+		return "", "", nil
+	}
+	username = netrcRemote.Get("login")
+	token = netrcRemote.Get("password")
 	return username, token, nil
 }
 
