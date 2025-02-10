@@ -36,7 +36,7 @@ func newClient(httpClient connect.HTTPClient, remote, username, token string) *c
 
 type modulesMsg []*modulev1.Module
 
-func (c *client) getModules(currentOwner string) tea.Cmd {
+func (c *client) listModules(currentOwner string) tea.Cmd {
 	return func() tea.Msg {
 		request := connect.NewRequest(&modulev1.ListModulesRequest{
 			OwnerRefs: []*ownerv1.OwnerRef{

@@ -373,7 +373,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case modelStateSearching:
 				m.currentOwner = m.searchInput.Value()
 				// TODO: Clear search input?
-				return m, m.client.getModules(m.currentOwner)
+				return m, m.client.listModules(m.currentOwner)
 			}
 			// enter or l are equivalent for all the cases below.
 			fallthrough
@@ -430,7 +430,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// directly to a reference.
 				// TODO: Hook this up to caching.
 				m.state = modelStateLoadingModules
-				return m, m.client.getModules(m.currentOwner)
+				return m, m.client.listModules(m.currentOwner)
 			}
 		case key.Matches(msg, m.keys.Browse):
 			var url string
