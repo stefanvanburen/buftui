@@ -787,18 +787,26 @@ type module struct {
 	underlying *modulev1.Module
 }
 
-// FilterValue implements list.Item.
+// FilterValue implements [list.Item].
 func (m *module) FilterValue() string {
 	return m.underlying.Name
 }
 
-// Title implements list.DefaultItem.
+// Title implements [list.DefaultItem].
 func (m *module) Title() string {
 	// TODO: Incorporate visibility / state here?
-	return m.underlying.Name
+	var title string
+	if m.underlying.Visibility == modulev1.ModuleVisibility_MODULE_VISIBILITY_PRIVATE {
+		title += "􀎠"
+	}
+	title += m.underlying.Name
+	if m.underlying.State == modulev1.ModuleState_MODULE_STATE_DEPRECATED {
+		title += " (Deprecated)"
+	}
+	return title
 }
 
-// Description implements list.DefaultItem.
+// Description implements [list.DefaultItem].
 func (m *module) Description() string {
 	// TODO: Show module description.
 	return m.underlying.Description
