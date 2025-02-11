@@ -841,7 +841,7 @@ func (m *commit) Title() string {
 // Description implements list.DefaultItem.
 func (m *commit) Description() string {
 	// TODO: Support absolute/relative time.
-	return fmt.Sprintf("Create Time: %s", m.underlying.CreateTime.AsTime().Format(time.RFC3339Nano))
+	return fmt.Sprintf("Create Time: %s", m.underlying.CreateTime.AsTime().Format(time.Stamp))
 }
 
 type commitFile struct {
