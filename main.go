@@ -805,7 +805,6 @@ func (m *module) FilterValue() string {
 
 // Title implements [list.DefaultItem].
 func (m *module) Title() string {
-	// TODO: Incorporate visibility / state here?
 	var title string
 	if m.underlying.Visibility == modulev1.ModuleVisibility_MODULE_VISIBILITY_PRIVATE {
 		title += "􀎠"
