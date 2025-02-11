@@ -31,6 +31,22 @@ import (
 	"github.com/peterbourgon/ff/v4/ffhelp"
 )
 
+const (
+	bufBlue = "#151fd5"
+	bufTeal = "#91dffb"
+)
+
+var (
+	colorForeground = lipgloss.AdaptiveColor{
+		Light: bufBlue,
+		Dark:  bufTeal,
+	}
+	colorBackground = lipgloss.AdaptiveColor{
+		Light: bufTeal,
+		Dark:  bufBlue,
+	}
+)
+
 func main() {
 	if err := run(context.Background()); err != nil {
 		fmt.Printf("error: %v\n", err)
@@ -89,12 +105,12 @@ func run(_ context.Context) error {
 	}
 
 	listStyles := list.DefaultStyles()
-	listStyles.Title = listStyles.Title.Foreground(bufBlue).Background(bufTeal).Bold(true)
+	listStyles.Title = listStyles.Title.Foreground(colorForeground).Background(colorBackground).Bold(true)
 
 	listItemStyles := list.NewDefaultItemStyles()
-	listItemStyles.SelectedTitle = listItemStyles.SelectedTitle.Foreground(bufBlue).BorderLeftForeground(bufBlue).Bold(true)
-	listItemStyles.SelectedDesc = listItemStyles.SelectedDesc.Foreground(bufBlue).BorderLeftForeground(bufBlue)
-	listItemStyles.NormalTitle = listItemStyles.NormalTitle.Foreground(bufBlue)
+	listItemStyles.SelectedTitle = listItemStyles.SelectedTitle.Foreground(colorForeground).BorderLeftForeground(colorForeground).Bold(true)
+	listItemStyles.SelectedDesc = listItemStyles.SelectedDesc.Foreground(colorForeground).BorderLeftForeground(colorForeground)
+	listItemStyles.NormalTitle = listItemStyles.NormalTitle.Foreground(colorForeground)
 
 	httpClient := httplb.NewClient()
 	defer httpClient.Close()
@@ -187,11 +203,6 @@ const (
 	modelStateLoadingModules
 	modelStateLoadingCommits
 	modelStateLoadingCommitFileContents
-)
-
-const (
-	bufBlue = lipgloss.Color("#151fd5")
-	bufTeal = lipgloss.Color("#91dffb")
 )
 
 type model struct {
@@ -549,12 +560,12 @@ func (m model) View() string {
 		if m.state == modelStateBrowsingCommitFileContents {
 			fileViewStyle := lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder(), true).
-				BorderForeground(bufBlue)
+				BorderForeground(colorForeground)
 			fileView = fileViewStyle.Render(fileView)
 		} else {
 			fileViewStyle := lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder(), true).
-				BorderForeground(bufTeal)
+				BorderForeground(colorBackground)
 			fileView = fileViewStyle.Render(fileView)
 		}
 		view = lipgloss.JoinHorizontal(
@@ -772,7 +783,7 @@ func newSearchInput() textinput.Model {
 	searchInput := textinput.New()
 	// Style the input.
 	// TODO: This is probably too much.
-	searchStyle := lipgloss.NewStyle().Foreground(bufBlue).Background(bufTeal)
+	searchStyle := lipgloss.NewStyle().Foreground(colorForeground).Background(colorBackground)
 	searchInput.PromptStyle = searchStyle
 	searchInput.PlaceholderStyle = searchStyle
 	searchInput.TextStyle = searchStyle
