@@ -32,8 +32,8 @@ import (
 )
 
 const (
-	bufBlue = "#151fd5"
-	bufTeal = "#91dffb"
+	bufBlue = "#0e5df5"
+	bufTeal = "#5fdcff"
 )
 
 var (
