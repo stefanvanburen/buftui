@@ -135,6 +135,7 @@ func run(_ context.Context) error {
 			defaultWidth, // TODO: Figure out the width of the terminal?
 			defaultHeight,
 		)
+		moduleList.SetShowHelp(false)
 	}
 
 	var commitList list.Model
@@ -147,6 +148,7 @@ func run(_ context.Context) error {
 			defaultWidth, // TODO: Figure out the width of the terminal?
 			defaultHeight,
 		)
+		commitList.SetShowHelp(false)
 	}
 
 	var commitFilesList list.Model
@@ -161,6 +163,7 @@ func run(_ context.Context) error {
 			defaultWidth,
 			defaultHeight, // TODO: Pick a reasonable value here.
 		)
+		commitFilesList.SetShowHelp(false)
 	}
 
 	model := model{
@@ -549,12 +552,14 @@ func (m model) View() string {
 		} else {
 			view += m.moduleList.View()
 		}
+		view += "\n\n" + m.help.View(m)
 	case modelStateBrowsingCommits:
 		if len(m.currentCommits) == 0 {
 			view += "No commits found for module"
 		} else {
 			view += m.commitList.View()
 		}
+		view += "\n\n" + m.help.View(m)
 	case modelStateBrowsingCommitContents, modelStateBrowsingCommitFileContents:
 		fileView := m.fileViewport.View()
 		if m.state == modelStateBrowsingCommitFileContents {
@@ -573,6 +578,7 @@ func (m model) View() string {
 			m.commitFilesList.View(),
 			fileView,
 		)
+		view += "\n\n" + m.help.View(m)
 	case modelStateSearching:
 		header := "Enter an owner (user or organization)"
 		view = header + "\n\n" + m.searchInput.View()
@@ -748,15 +754,15 @@ func (m model) ShortHelp() []key.Binding {
 	switch m.state {
 	case modelStateBrowsingModules:
 		// Can't go Left while browsing modules; already at the "top".
-		shortHelp = []key.Binding{keys.Up, keys.Down}
-		if len(m.currentModules) == 0 {
-			// Can't go Right when no modules exist.
+		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Browse}
+		if len(m.currentModules) != 0 {
+			// Can only go right when modules exist.
 			shortHelp = append(shortHelp, keys.Right)
 		}
 	case modelStateBrowsingCommits, modelStateBrowsingCommitContents:
 		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left}
-		if len(m.currentCommits) == 0 {
-			// Can't go Right when no commits exist.
+		if len(m.currentCommits) != 0 {
+			// Can only go right when commits exist.
 			shortHelp = append(shortHelp, keys.Right)
 		}
 	case modelStateBrowsingCommitFileContents:
