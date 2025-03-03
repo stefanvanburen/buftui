@@ -10,7 +10,7 @@ require (
 	github.com/bufbuild/httplb v0.3.1
 	github.com/bufbuild/protovalidate-go v0.9.2
 	github.com/charmbracelet/bubbles v0.20.0
-	github.com/charmbracelet/bubbletea v1.3.3
+	github.com/charmbracelet/bubbletea v1.3.4
 	github.com/charmbracelet/lipgloss v1.0.0
 	github.com/cli/browser v1.3.0
 	github.com/jdx/go-netrc v1.0.0
