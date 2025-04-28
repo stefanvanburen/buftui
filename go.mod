@@ -6,7 +6,7 @@ require (
 	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.18.1-20250116203702-1c024d64352b.1
 	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.5-20250116203702-1c024d64352b.1
 	connectrpc.com/connect v1.18.1
-	github.com/alecthomas/chroma/v2 v2.15.0
+	github.com/alecthomas/chroma/v2 v2.17.0
 	github.com/bufbuild/httplb v0.3.1
 	github.com/bufbuild/protovalidate-go v0.9.2
 	github.com/charmbracelet/bubbles v0.20.0
@@ -27,7 +27,7 @@ require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/x/ansi v0.8.0 // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
-	github.com/dlclark/regexp2 v1.11.4 // indirect
+	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/google/cel-go v0.23.2 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
