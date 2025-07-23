@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
-	"github.com/bufbuild/protovalidate-go"
+	"buf.build/go/protovalidate"
 	"go.akshayshah.org/attest"
 	"google.golang.org/protobuf/testing/protocmp"
 )
