@@ -9,7 +9,7 @@ require (
 	connectrpc.com/connect v1.18.1
 	github.com/alecthomas/chroma/v2 v2.19.0
 	github.com/bufbuild/httplb v0.3.1
-	github.com/charmbracelet/bubbles v0.20.0
+	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.5
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/cli/browser v1.3.0
