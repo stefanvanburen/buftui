@@ -8,7 +8,7 @@ require (
 	buf.build/go/protovalidate v0.14.0
 	connectrpc.com/connect v1.18.1
 	github.com/alecthomas/chroma/v2 v2.19.0
-	github.com/bufbuild/httplb v0.3.1
+	github.com/bufbuild/httplb v0.4.1
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.5
 	github.com/charmbracelet/lipgloss v1.1.0
@@ -48,7 +48,7 @@ require (
 	golang.org/x/exp v0.0.0-20250207012021-f9890c6ad9f3 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20231108232855-2478ac86f678 // indirect
 	golang.org/x/mod v0.23.0 // indirect
-	golang.org/x/net v0.35.0 // indirect
+	golang.org/x/net v0.38.0 // indirect
 	golang.org/x/sync v0.13.0 // indirect
 	golang.org/x/sys v0.32.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
