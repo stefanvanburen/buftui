@@ -7,7 +7,7 @@ require (
 	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.6-20250721151928-2b7ae473b098.1
 	buf.build/go/protovalidate v0.14.0
 	connectrpc.com/connect v1.18.1
-	github.com/alecthomas/chroma/v2 v2.18.0
+	github.com/alecthomas/chroma/v2 v2.19.0
 	github.com/bufbuild/httplb v0.3.1
 	github.com/charmbracelet/bubbles v0.20.0
 	github.com/charmbracelet/bubbletea v1.3.5
