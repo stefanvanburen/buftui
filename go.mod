@@ -4,7 +4,7 @@ go 1.24.5
 
 require (
 	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.18.1-20250721151928-2b7ae473b098.1
-	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.6-20250721151928-2b7ae473b098.1
+	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.7-20250721151928-2b7ae473b098.1
 	buf.build/go/protovalidate v0.14.0
 	connectrpc.com/connect v1.18.1
 	github.com/alecthomas/chroma/v2 v2.20.0
@@ -16,11 +16,11 @@ require (
 	github.com/jdx/go-netrc v1.0.0
 	github.com/peterbourgon/ff/v4 v4.0.0-alpha.4
 	go.akshayshah.org/attest v1.1.0
-	google.golang.org/protobuf v1.36.6
+	google.golang.org/protobuf v1.36.7
 )
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.6-20250717185734-6c6e0d3c608e.1 // indirect
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.7-20250717185734-6c6e0d3c608e.1 // indirect
 	cel.dev/expr v0.23.1 // indirect
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
