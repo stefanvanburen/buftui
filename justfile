@@ -1,6 +1,5 @@
 # https://just.systems
 
-[parallel]
 @default: lint test
 
 test:
