@@ -154,7 +154,7 @@ func newAuthInterceptor(username, token string) connect.UnaryInterceptorFunc {
 			if req.Spec().IsClient {
 				req.Header().Set(
 					"Authorization",
-					"Basic "+base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", username, token))),
+					"Basic "+base64.StdEncoding.EncodeToString([]byte(username+":"+token)),
 				)
 			} else {
 				return nil, fmt.Errorf("auth interceptor is a client-only interceptor")
