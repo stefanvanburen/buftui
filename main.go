@@ -288,10 +288,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, currentModule := range m.currentModules {
 			modules[i] = &module{currentModule}
 		}
-		m.moduleList.SetHeight(len(m.currentModules) * 4) // TODO: Pick a reasonable value here.
+		m.moduleList.SetHeight(len(m.currentModules) * 2) // TODO: Pick a reasonable value here.
 		m.moduleList.SetItems(modules)
 		m.moduleList.Title = fmt.Sprintf("Modules (Owner: %s)", m.currentOwner)
 		m.moduleList.Styles = m.listStyles
+		m.moduleList.InfiniteScrolling = false
 		m.moduleList.AdditionalFullHelpKeys = func() []key.Binding {
 			return []key.Binding{keys.Right}
 		}
@@ -314,6 +315,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commitList.SetItems(commits)
 		m.commitList.Title = fmt.Sprintf("Commits (Module: %s/%s)", m.currentOwner, m.currentModule)
 		m.commitList.Styles = m.listStyles
+		m.commitList.InfiniteScrolling = false
 		m.commitList.AdditionalFullHelpKeys = func() []key.Binding {
 			return []key.Binding{keys.Left, keys.Right}
 		}
@@ -334,6 +336,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commitFilesList.Title = fmt.Sprintf("Commit %s (Module: %s/%s)", m.currentCommit, m.currentOwner, m.currentModule)
 		m.commitFilesList.SetShowStatusBar(false)
 		m.commitFilesList.Styles = m.listStyles
+		m.commitFilesList.InfiniteScrolling = false
 		m.commitFilesList.AdditionalFullHelpKeys = func() []key.Binding {
 			return []key.Binding{keys.Left, keys.Right}
 		}
