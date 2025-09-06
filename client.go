@@ -39,6 +39,7 @@ type modulesMsg []*modulev1.Module
 func (c *client) listModules(currentOwner string) tea.Cmd {
 	return func() tea.Msg {
 		request := connect.NewRequest(&modulev1.ListModulesRequest{
+			PageSize: 50,
 			OwnerRefs: []*ownerv1.OwnerRef{
 				{
 					Value: &ownerv1.OwnerRef_Name{
@@ -60,6 +61,7 @@ type commitsMsg []*modulev1.Commit
 func (c *client) listCommits(currentOwner, currentModule string) tea.Cmd {
 	return func() tea.Msg {
 		request := connect.NewRequest(&modulev1.ListCommitsRequest{
+			PageSize: 50,
 			ResourceRef: &modulev1.ResourceRef{
 				Value: &modulev1.ResourceRef_Name_{
 					Name: &modulev1.ResourceRef_Name{
