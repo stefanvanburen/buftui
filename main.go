@@ -288,7 +288,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, currentModule := range m.currentModules {
 			modules[i] = &module{currentModule}
 		}
-		m.moduleList.SetHeight(len(m.currentModules) * 2) // TODO: Pick a reasonable value here.
 		m.moduleList.SetItems(modules)
 		m.moduleList.Title = fmt.Sprintf("Modules (Owner: %s)", m.currentOwner)
 		m.moduleList.Styles = m.listStyles
@@ -311,7 +310,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, currentCommit := range m.currentCommits {
 			commits[i] = &commit{currentCommit}
 		}
-		m.commitList.SetHeight(len(m.currentCommits) * 5)
 		m.commitList.SetItems(commits)
 		m.commitList.Title = fmt.Sprintf("Commits (Module: %s/%s)", m.currentOwner, m.currentModule)
 		m.commitList.Styles = m.listStyles
@@ -331,7 +329,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, currentCommitFile := range m.currentCommitFiles {
 			commitFiles[i] = &commitFile{currentCommitFile}
 		}
-		m.commitFilesList.SetHeight(len(commitFiles) + 8) // TODO: Pick a reasonable value here.
 		m.commitFilesList.SetItems(commitFiles)
 		m.commitFilesList.Title = fmt.Sprintf("Commit %s (Module: %s/%s)", m.currentCommit, m.currentOwner, m.currentModule)
 		m.commitFilesList.SetShowStatusBar(false)
