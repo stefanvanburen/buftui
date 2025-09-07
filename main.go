@@ -523,6 +523,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		m.fileViewport.SetContent(highlightedFile)
+		// When we switch files, we reset the position of the viewport back to the top.
+		m.fileViewport.GotoTop()
 	case modelStateBrowsingCommitFileContents:
 		m.fileViewport, cmd = m.fileViewport.Update(msg)
 	case modelStateSearching:
