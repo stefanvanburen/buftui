@@ -639,7 +639,7 @@ func highlightFile(filename, fileContents string) (string, error) {
 	lexer := cmp.Or(lexers.Match(filename), lexers.Fallback)
 	// TODO: Make this configurable?
 	// Probably not ;)
-	style := cmp.Or(styles.Get("algol_nu"), styles.Fallback)
+	style := styles.Get("algol_nu")
 	// TODO: This seemingly works on my terminal, but we may need
 	// to select a different one based on terminal type.
 	// I think we should be able to figure that out from
