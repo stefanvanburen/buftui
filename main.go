@@ -339,7 +339,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commitFilesList.AdditionalShortHelpKeys = func() []key.Binding {
 			return []key.Binding{keys.Left, keys.Right}
 		}
-		m.fileViewport = viewport.New(100, max(len(msg.Files), 30))
+		m.fileViewport = viewport.New(100, max(m.commitFilesList.Height(), 30))
 		// Set up the initial viewport.
 		commitFileItem := m.commitFilesList.SelectedItem()
 		commitFile, ok := commitFileItem.(*commitFile)
