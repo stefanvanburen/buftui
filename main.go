@@ -58,11 +58,10 @@ func run(_ context.Context) error {
 	fs := ff.NewFlagSet("buftui")
 	var (
 		// `-r` is for reference, which should generally be preferred.
-		remoteFlag     = fs.StringLong("remote", "buf.build", "BSR remote")
-		fullscreenFlag = fs.Bool('f', "fullscreen", "Enable fullscreen display")
-		usernameFlag   = fs.String('u', "username", "", "Set username for authentication (default: login for remote in ~/.netrc)")
-		tokenFlag      = fs.String('t', "token", "", "Set token for authentication (default: password for remote in ~/.netrc)")
-		referenceFlag  = fs.String('r', "reference", "", "Set BSR reference to open")
+		remoteFlag    = fs.StringLong("remote", "buf.build", "BSR remote")
+		usernameFlag  = fs.String('u', "username", "", "Set username for authentication (default: login for remote in ~/.netrc)")
+		tokenFlag     = fs.String('t', "token", "", "Set token for authentication (default: password for remote in ~/.netrc)")
+		referenceFlag = fs.String('r', "reference", "", "Set BSR reference to open")
 	)
 	if err := ff.Parse(fs, os.Args[1:]); err != nil {
 		fmt.Printf("%s\n", ffhelp.Flags(fs))
@@ -120,6 +119,7 @@ func run(_ context.Context) error {
 		initialState = modelStateLoadingReference
 	}
 
+	// NOTE: These values end up overridden below, when we get the initial tea.WindowSizeMsg.
 	defaultWidth, defaultHeight := 100, 20
 
 	var moduleList list.Model
@@ -132,7 +132,7 @@ func run(_ context.Context) error {
 		moduleList = list.New(
 			nil,
 			delegate,
-			defaultWidth, // TODO: Figure out the width of the terminal?
+			defaultWidth,
 			defaultHeight,
 		)
 		moduleList.SetShowHelp(false)
@@ -145,7 +145,7 @@ func run(_ context.Context) error {
 		commitList = list.New(
 			nil,
 			delegate,
-			defaultWidth, // TODO: Figure out the width of the terminal?
+			defaultWidth,
 			defaultHeight,
 		)
 		commitList.SetShowHelp(false)
@@ -161,7 +161,7 @@ func run(_ context.Context) error {
 			nil,
 			delegate,
 			defaultWidth,
-			defaultHeight, // TODO: Pick a reasonable value here.
+			defaultHeight,
 		)
 		commitFilesList.SetShowHelp(false)
 	}
@@ -184,11 +184,7 @@ func run(_ context.Context) error {
 		commitFilesList: commitFilesList,
 	}
 
-	var options []tea.ProgramOption
-	if *fullscreenFlag {
-		options = append(options, tea.WithAltScreen())
-	}
-	if _, err := tea.NewProgram(model, options...).Run(); err != nil {
+	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
 		return err
 	}
 	return nil
@@ -254,6 +250,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// If we set a width on the help menu it can gracefully truncate
 		// its view as needed.
 		m.help.Width = msg.Width
+
+		// TODO: Make these values responsive, based on the number of items received; these
+		// should be the max values.
+		m.moduleList.SetHeight(msg.Height - 5) // Give space for the list title and help message
+		m.moduleList.SetWidth(msg.Width)
+		m.commitList.SetHeight(msg.Height - 5) // Give space for the list title and help message
+		m.commitList.SetWidth(msg.Width)
+		m.commitFilesList.SetHeight(msg.Height - 5) // Give space for the list title and help message
+		m.commitFilesList.SetWidth(msg.Width / 2)
+		m.fileViewport.Height = msg.Height
+		m.fileViewport.Width = msg.Width / 2
 
 	case resourceMsg:
 		switch retrievedResource := msg.retrievedResource.Value.(type) {
