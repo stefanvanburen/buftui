@@ -331,7 +331,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.commitFilesList.SetItems(commitFiles)
 		m.commitFilesList.Title = fmt.Sprintf("Commit %s (Module: %s/%s)", m.currentCommit, m.currentOwner, m.currentModule)
-		m.commitFilesList.SetShowStatusBar(false)
 		m.commitFilesList.Styles = m.listStyles
 		m.commitFilesList.InfiniteScrolling = false
 		m.commitFilesList.AdditionalFullHelpKeys = func() []key.Binding {
