@@ -3,7 +3,7 @@ module github.com/stefanvanburen/buftui
 go 1.25.0
 
 require (
-	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.18.1-20250819211657-a3dd0d3ea69b.1
+	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.18.1-20250903170917-c4be0f57e197.1
 	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.8-20250819211657-a3dd0d3ea69b.1
 	buf.build/go/protovalidate v0.14.0
 	connectrpc.com/connect v1.18.1
