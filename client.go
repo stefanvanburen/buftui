@@ -81,20 +81,14 @@ func (c *client) listCommits(currentOwner, currentModule string) tea.Cmd {
 
 type contentsMsg *modulev1.DownloadResponse_Content
 
-func (c *client) getCommitContent(currentOwner, currentModule, commitName string) tea.Cmd {
+func (c *client) getCommitContent(commitID string) tea.Cmd {
 	return func() tea.Msg {
 		request := connect.NewRequest(&modulev1.DownloadRequest{
 			Values: []*modulev1.DownloadRequest_Value{
 				{
 					ResourceRef: &modulev1.ResourceRef{
-						Value: &modulev1.ResourceRef_Name_{
-							Name: &modulev1.ResourceRef_Name{
-								Owner:  currentOwner,
-								Module: currentModule,
-								Child: &modulev1.ResourceRef_Name_Ref{
-									Ref: commitName,
-								},
-							},
+						Value: &modulev1.ResourceRef_Id{
+							Id: commitID,
 						},
 					},
 				},

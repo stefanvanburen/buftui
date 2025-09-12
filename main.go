@@ -176,7 +176,7 @@ type model struct {
 	// State-related data
 	currentOwner       string
 	currentModule      string
-	currentCommit      string
+	currentCommitID    string
 	currentModules     modulesMsg
 	currentCommits     commitsMsg
 	currentCommitFiles []*modulev1.File
@@ -269,9 +269,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case *modulev1.Resource_Commit:
 			m.currentOwner = msg.requestedResource.Owner
 			m.currentModule = msg.requestedResource.Module
-			m.currentCommit = retrievedResource.Commit.Id
+			m.currentCommitID = retrievedResource.Commit.Id
 			m.state = modelStateLoadingCommitFileContents
-			return m, m.client.getCommitContent(m.currentOwner, m.currentModule, m.currentCommit)
+			return m, m.client.getCommitContent(m.currentCommitID)
 		case *modulev1.Resource_Label:
 			// TODO: Is this possible? I guess so?
 			// We don't handle it right now, though.
@@ -334,7 +334,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			commitFiles[i] = &commitFile{currentCommitFile}
 		}
 		m.commitFilesList.SetItems(commitFiles)
-		m.commitFilesList.Title = fmt.Sprintf("Commit %s (Module: %s/%s)", m.currentCommit, m.currentOwner, m.currentModule)
+		m.commitFilesList.Title = fmt.Sprintf("Commit %s (Module: %s/%s)", m.currentCommitID, m.currentOwner, m.currentModule)
 		m.commitFilesList.Styles = m.listStyles
 		m.commitFilesList.InfiniteScrolling = false
 		m.commitFilesList.AdditionalFullHelpKeys = func() []key.Binding {
@@ -418,8 +418,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if !ok {
 					panic("items in commitList should be commits")
 				}
-				m.currentCommit = commit.underlying.Id
-				return m, m.client.getCommitContent(m.currentOwner, m.currentModule, m.currentCommit)
+				m.currentCommitID = commit.underlying.Id
+				return m, m.client.getCommitContent(m.currentCommitID)
 			case modelStateBrowsingCommitContents:
 				m.state = modelStateBrowsingCommitFileContents
 				return m, nil
@@ -459,14 +459,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if !ok {
 					panic("selected item is not a commitFile")
 				}
-				url = "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule + "/file/" + m.currentCommit + ":" + commitFile.underlying.Path
+				url = "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule + "/file/" + m.currentCommitID + ":" + commitFile.underlying.Path
 			case modelStateBrowsingCommitContents:
 				list = m.commitFilesList
 				commitFile, ok := m.commitFilesList.SelectedItem().(*commitFile)
 				if !ok {
 					panic("selected item is not a commitFile")
 				}
-				url = "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule + "/file/" + m.currentCommit + ":" + commitFile.underlying.Path
+				url = "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule + "/file/" + m.currentCommitID + ":" + commitFile.underlying.Path
 			case modelStateBrowsingCommits:
 				list = m.commitList
 				commit, ok := m.commitList.SelectedItem().(*commit)
