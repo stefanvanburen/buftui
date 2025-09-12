@@ -17,14 +17,15 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/bufbuild/httplb"
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/bubbles/v2/help"
+	"github.com/charmbracelet/bubbles/v2/key"
+	"github.com/charmbracelet/bubbles/v2/list"
+	"github.com/charmbracelet/bubbles/v2/spinner"
+	"github.com/charmbracelet/bubbles/v2/textinput"
+	"github.com/charmbracelet/bubbles/v2/viewport"
+	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/charmbracelet/lipgloss/v2/compat"
 	"github.com/cli/browser"
 	"github.com/jdx/go-netrc"
 	"github.com/peterbourgon/ff/v4"
@@ -37,13 +38,13 @@ const (
 )
 
 var (
-	colorForeground = lipgloss.AdaptiveColor{
-		Light: bufBlue,
-		Dark:  bufTeal,
+	colorForeground = compat.AdaptiveColor{
+		Light: lipgloss.Color(bufBlue),
+		Dark:  lipgloss.Color(bufTeal),
 	}
-	colorBackground = lipgloss.AdaptiveColor{
-		Light: bufTeal,
-		Dark:  bufBlue,
+	colorBackground = compat.AdaptiveColor{
+		Light: lipgloss.Color(bufTeal),
+		Dark:  lipgloss.Color(bufBlue),
 	}
 )
 
@@ -103,14 +104,6 @@ func run(_ context.Context) error {
 		return fmt.Errorf("token must be set, either by flag or in the ~/.netrc file")
 	}
 
-	listStyles := list.DefaultStyles()
-	listStyles.Title = listStyles.Title.Foreground(colorForeground).Background(colorBackground).Bold(true)
-
-	listItemStyles := list.NewDefaultItemStyles()
-	listItemStyles.SelectedTitle = listItemStyles.SelectedTitle.Foreground(colorForeground).BorderLeftForeground(colorForeground).Bold(true)
-	listItemStyles.SelectedDesc = listItemStyles.SelectedDesc.Foreground(colorForeground).BorderLeftForeground(colorForeground)
-	listItemStyles.NormalTitle = listItemStyles.NormalTitle.Foreground(colorForeground)
-
 	httpClient := httplb.NewClient()
 	defer httpClient.Close()
 
@@ -119,68 +112,30 @@ func run(_ context.Context) error {
 		initialState = modelStateLoadingReference
 	}
 
-	// NOTE: These values end up overridden below, when we get the initial tea.WindowSizeMsg.
-	defaultWidth, defaultHeight := 100, 20
+	delegate := list.NewDefaultDelegate()
+	moduleList := list.New(nil, delegate, 20, 20)
+	moduleList.SetShowHelp(false)
 
-	var moduleList list.Model
-	{
-		delegate := list.NewDefaultDelegate()
-		delegate.Styles = listItemStyles
-		// TODO: Show module description.
-		delegate.ShowDescription = false
-		delegate.SetSpacing(0)
-		moduleList = list.New(
-			nil,
-			delegate,
-			defaultWidth,
-			defaultHeight,
-		)
-		moduleList.SetShowHelp(false)
-	}
+	commitList := list.New(nil, delegate, 20, 20)
+	commitList.SetShowHelp(false)
 
-	var commitList list.Model
-	{
-		delegate := list.NewDefaultDelegate()
-		delegate.Styles = listItemStyles
-		commitList = list.New(
-			nil,
-			delegate,
-			defaultWidth,
-			defaultHeight,
-		)
-		commitList.SetShowHelp(false)
-	}
-
-	var commitFilesList list.Model
-	{
-		delegate := list.NewDefaultDelegate()
-		delegate.Styles = listItemStyles
-		delegate.ShowDescription = false
-		delegate.SetSpacing(0)
-		commitFilesList = list.New(
-			nil,
-			delegate,
-			defaultWidth,
-			defaultHeight,
-		)
-		commitFilesList.SetShowHelp(false)
-	}
+	commitFilesList := list.New(nil, delegate, 20, 20)
+	commitFilesList.SetShowHelp(false)
 
 	model := model{
 		state:            initialState,
 		currentOwner:     username,
 		spinner:          spinner.New(spinner.WithSpinner(spinner.Dot)),
-		listStyles:       listStyles,
-		listItemStyles:   listItemStyles,
 		client:           newClient(httpClient, remote, username, token),
 		help:             help.New(),
 		keys:             keys,
 		currentReference: parsedReference,
-		searchInput:      newSearchInput(),
+		searchInput:      newSearchInput(20, false),
 		remote:           remote,
+		fileViewport:     viewport.New(),
 
-		commitList:      commitList,
 		moduleList:      moduleList,
+		commitList:      commitList,
 		commitFilesList: commitFilesList,
 	}
 
@@ -234,10 +189,15 @@ type model struct {
 	fileViewport    viewport.Model
 	searchInput     textinput.Model
 	help            help.Model
+
+	isDark bool
 }
 
 func (m model) Init() tea.Cmd {
-	inits := []tea.Cmd{m.spinner.Tick}
+	inits := []tea.Cmd{
+		m.spinner.Tick,
+		tea.RequestBackgroundColor,
+	}
 	if m.currentReference != nil {
 		inits = append(inits, m.client.getResource(m.currentReference))
 	}
@@ -246,6 +206,42 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		m.isDark = msg.IsDark()
+
+		listStyles := list.DefaultStyles(msg.IsDark())
+		listStyles.Title = listStyles.Title.Foreground(colorForeground).Background(colorBackground).Bold(true)
+		m.listStyles = listStyles
+
+		listItemStyles := list.NewDefaultItemStyles(msg.IsDark())
+		listItemStyles.SelectedTitle = listItemStyles.SelectedTitle.Foreground(colorForeground).BorderLeftForeground(colorForeground).Bold(true)
+		listItemStyles.SelectedDesc = listItemStyles.SelectedDesc.Foreground(colorForeground).BorderLeftForeground(colorForeground)
+		listItemStyles.NormalTitle = listItemStyles.NormalTitle.Foreground(colorForeground)
+		m.listItemStyles = listItemStyles
+
+		{
+			delegate := list.NewDefaultDelegate()
+			delegate.Styles = listItemStyles
+			// TODO: Show module description.
+			delegate.ShowDescription = false
+			delegate.SetSpacing(0)
+			m.moduleList.SetDelegate(delegate)
+		}
+
+		{
+			delegate := list.NewDefaultDelegate()
+			delegate.Styles = listItemStyles
+			m.commitList.SetDelegate(delegate)
+		}
+
+		{
+			delegate := list.NewDefaultDelegate()
+			delegate.Styles = listItemStyles
+			delegate.ShowDescription = false
+			delegate.SetSpacing(0)
+			m.commitFilesList.SetDelegate(delegate)
+		}
+
 	case tea.WindowSizeMsg:
 		// If we set a width on the help menu it can gracefully truncate
 		// its view as needed.
@@ -259,8 +255,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commitList.SetWidth(msg.Width)
 		m.commitFilesList.SetHeight(msg.Height - 5) // Give space for the list title and help message
 		m.commitFilesList.SetWidth(msg.Width / 2)
-		m.fileViewport.Height = msg.Height
-		m.fileViewport.Width = msg.Width / 2
+		m.fileViewport.SetHeight(msg.Height)
+		m.fileViewport.SetWidth(msg.Width / 2)
+		m.searchInput.SetWidth(min(msg.Width, 50)) // clamped at 50 characters wide
 
 	case resourceMsg:
 		switch retrievedResource := msg.retrievedResource.Value.(type) {
@@ -346,8 +343,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commitFilesList.AdditionalShortHelpKeys = func() []key.Binding {
 			return []key.Binding{keys.Left, keys.Right}
 		}
-		m.fileViewport = viewport.New(100, max(m.commitFilesList.Height(), 30))
-		// Set up the initial viewport.
 		commitFileItem := m.commitFilesList.SelectedItem()
 		commitFile, ok := commitFileItem.(*commitFile)
 		if !ok {
@@ -385,7 +380,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state != modelStateSearching {
 				// "s" -> "search"
 				m.state = modelStateSearching
-				m.searchInput = newSearchInput()
+				m.searchInput.Reset()
 				return m, nil
 			}
 		case key.Matches(msg, m.keys.Enter):
@@ -793,18 +788,19 @@ func (m model) FullHelp() [][]key.Binding {
 	}
 }
 
-func newSearchInput() textinput.Model {
+func newSearchInput(width int, isDark bool) textinput.Model {
 	searchInput := textinput.New()
 	// Style the input.
-	// TODO: This is probably too much.
-	searchStyle := lipgloss.NewStyle().Foreground(colorForeground).Background(colorBackground)
-	searchInput.PromptStyle = searchStyle
-	searchInput.PlaceholderStyle = searchStyle
-	searchInput.TextStyle = searchStyle
-	searchInput.Cursor.Style = searchStyle
+	searchInput.Styles = textinput.DefaultStyles(isDark)
+	style := lipgloss.NewStyle().Foreground(colorForeground).Background(colorBackground)
+	searchInput.Styles.Focused.Placeholder = style
+	searchInput.Styles.Focused.Prompt = style
+	searchInput.Styles.Focused.Text = style
+	searchInput.Styles.Cursor.Color = colorBackground
+
 	searchInput.Focus()
 	searchInput.Placeholder = "bufbuild"
-	searchInput.Width = 20
+	searchInput.SetWidth(width)
 	return searchInput
 }
 
