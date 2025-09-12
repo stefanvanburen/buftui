@@ -564,22 +564,16 @@ func (m model) View() string {
 		}
 		view += "\n\n" + m.help.View(m)
 	case modelStateBrowsingCommitContents, modelStateBrowsingCommitFileContents:
-		fileView := m.fileViewport.View()
+		fileViewStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true)
 		if m.state == modelStateBrowsingCommitFileContents {
-			fileViewStyle := lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder(), true).
-				BorderForeground(colorForeground)
-			fileView = fileViewStyle.Render(fileView)
+			fileViewStyle = fileViewStyle.BorderForeground(colorForeground)
 		} else {
-			fileViewStyle := lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder(), true).
-				BorderForeground(colorBackground)
-			fileView = fileViewStyle.Render(fileView)
+			fileViewStyle = fileViewStyle.BorderForeground(colorBackground)
 		}
 		view = lipgloss.JoinHorizontal(
 			lipgloss.Top,
 			m.commitFilesList.View(),
-			fileView,
+			fileViewStyle.Render(m.fileViewport.View()),
 		)
 		view += "\n\n" + m.help.View(m)
 	case modelStateSearching:
