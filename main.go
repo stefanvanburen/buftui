@@ -46,6 +46,8 @@ var (
 		Light: lipgloss.Color(bufTeal),
 		Dark:  lipgloss.Color(bufBlue),
 	}
+	codeStyleLight = styles.Get("modus-operandi")
+	codeStyleDark  = styles.Get("modus-vivendi")
 )
 
 func main() {
@@ -356,7 +358,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
-		highlightedFile, err := highlightFile(selectedFileName, fileContents)
+		highlightedFile, err := highlightFile(selectedFileName, fileContents, m.isDark)
 		if err != nil {
 			m.err = fmt.Errorf("can't highlight file: %w", err)
 			return m, tea.Quit
@@ -519,7 +521,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
-		highlightedFile, err := highlightFile(selectedFileName, fileContents)
+		highlightedFile, err := highlightFile(selectedFileName, fileContents, m.isDark)
 		if err != nil {
 			m.err = fmt.Errorf("can't highlight file: %w", err)
 			return m, tea.Quit
@@ -618,7 +620,7 @@ func getUserTokenFromNetrc(remote string) (username string, token string, err er
 	return username, token, nil
 }
 
-func highlightFile(filename, fileContents string) (string, error) {
+func highlightFile(filename, fileContents string, isDark bool) (string, error) {
 	// There are only a few filetypes that can actually exist in a module:
 	// - LICENSE
 	// - Documentation files (markdown)
@@ -627,8 +629,10 @@ func highlightFile(filename, fileContents string) (string, error) {
 	// Fallback is for LICENSE files.
 	lexer := cmp.Or(lexers.Match(filename), lexers.Fallback)
 	// TODO: Make this configurable?
-	// Probably not ;)
-	style := styles.Get("algol_nu")
+	style := codeStyleLight
+	if isDark {
+		style = codeStyleDark
+	}
 	// TODO: This seemingly works on my terminal, but we may need
 	// to select a different one based on terminal type.
 	// I think we should be able to figure that out from
