@@ -11,7 +11,7 @@ require (
 	github.com/bufbuild/httplb v0.4.1
 	github.com/charmbracelet/bubbles/v2 v2.0.0-beta.1
 	github.com/charmbracelet/bubbletea/v2 v2.0.0-beta.4
-	github.com/charmbracelet/lipgloss/v2 v2.0.0-beta.1
+	github.com/charmbracelet/lipgloss/v2 v2.0.0-beta1
 	github.com/cli/browser v1.3.0
 	github.com/jdx/go-netrc v1.0.0
 	github.com/peterbourgon/ff/v4 v4.0.0-beta.1
