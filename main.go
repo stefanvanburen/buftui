@@ -583,7 +583,6 @@ func (m model) View() string {
 	case modelStateSearching:
 		header := "Enter an owner (user or organization)"
 		view = header + "\n\n" + m.searchInput.View()
-		view += "\n\n" + m.help.View(m)
 	default:
 		return fmt.Sprintf("unaccounted state: %v", m.state)
 	}
