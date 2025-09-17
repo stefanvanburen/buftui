@@ -799,7 +799,6 @@ func newSearchInput(isDark bool) textinput.Model {
 
 	searchInput.Focus()
 	searchInput.Placeholder = "bufbuild"
-	searchInput.SetWidth(width)
 	return searchInput
 }
 
