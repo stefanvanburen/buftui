@@ -132,7 +132,7 @@ func run(_ context.Context) error {
 		help:             help.New(),
 		keys:             keys,
 		currentReference: parsedReference,
-		searchInput:      newSearchInput(20, false),
+		searchInput:      newSearchInput(false),
 		remote:           remote,
 		fileViewport:     viewport.New(),
 
@@ -786,7 +786,7 @@ func (m model) FullHelp() [][]key.Binding {
 	}
 }
 
-func newSearchInput(width int, isDark bool) textinput.Model {
+func newSearchInput(isDark bool) textinput.Model {
 	searchInput := textinput.New()
 	// Style the input.
 	searchInput.Styles = textinput.DefaultStyles(isDark)
