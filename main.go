@@ -52,13 +52,13 @@ var (
 )
 
 func main() {
-	if err := run(context.Background()); err != nil {
+	if err := run(context.Background(), os.Args[1:]); err != nil {
 		fmt.Printf("error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(_ context.Context) error {
+func run(_ context.Context, args []string) error {
 	fs := ff.NewFlagSet("buftui")
 	var (
 		// `-r` is for reference, which should generally be preferred.
@@ -67,7 +67,7 @@ func run(_ context.Context) error {
 		tokenFlag     = fs.String('t', "token", "", "Set token for authentication (default: password for remote in ~/.netrc)")
 		referenceFlag = fs.String('r', "reference", "", "Set BSR reference to open")
 	)
-	if err := ff.Parse(fs, os.Args[1:]); err != nil {
+	if err := ff.Parse(fs, args); err != nil {
 		fmt.Printf("%s\n", ffhelp.Flags(fs))
 		return err
 	}
