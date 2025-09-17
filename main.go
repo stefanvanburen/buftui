@@ -440,6 +440,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// directly to a reference.
 				// TODO: Hook this up to caching.
 				m.state = modelStateLoadingCommits
+				m.commitFilesList.ResetSelected()
 				return m, m.client.listCommits(m.currentOwner, m.currentModule)
 			case modelStateBrowsingCommits:
 				// NOTE: We don't necessarily have the module
@@ -447,6 +448,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// directly to a reference.
 				// TODO: Hook this up to caching.
 				m.state = modelStateLoadingModules
+				m.commitList.ResetSelected()
 				return m, m.client.listModules(m.currentOwner)
 			}
 		case key.Matches(msg, m.keys.Browse):
