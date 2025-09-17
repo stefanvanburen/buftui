@@ -12,6 +12,7 @@ import (
 	"time"
 
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
+	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
 	"buf.build/go/protovalidate"
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
@@ -388,6 +389,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Enter):
 			switch m.state {
 			case modelStateSearching:
+				if m.searchInput.Err != nil {
+					// Don't allow a submission if the input doesn't validate.
+					return m, nil
+				}
 				m.currentOwner = m.searchInput.Value()
 				// TODO: Clear search input?
 				return m, m.client.listModules(m.currentOwner)
@@ -583,6 +588,9 @@ func (m model) View() string {
 	case modelStateSearching:
 		header := "Enter an owner (user or organization)"
 		view = header + "\n\n" + m.searchInput.View()
+		if m.searchInput.Err != nil {
+			view += "\n\n" + fmt.Sprintf("err: %s", m.searchInput.Err)
+		}
 	default:
 		return fmt.Sprintf("unaccounted state: %v", m.state)
 	}
@@ -789,6 +797,11 @@ func (m model) FullHelp() [][]key.Binding {
 
 func newSearchInput(isDark bool) textinput.Model {
 	searchInput := textinput.New()
+	searchInput.Validate = func(input string) error {
+		return protovalidate.Validate(&ownerv1.OwnerRef{
+			Value: &ownerv1.OwnerRef_Name{Name: input},
+		})
+	}
 	// Style the input.
 	searchInput.Styles = textinput.DefaultStyles(isDark)
 	style := lipgloss.NewStyle().Foreground(colorForeground).Background(colorBackground)
