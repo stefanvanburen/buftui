@@ -19,8 +19,8 @@ type client struct {
 	resourceServiceClient modulev1connect.ResourceServiceClient
 }
 
-func newClient(httpClient connect.HTTPClient, remote, username, token string) *client {
-	authInterceptor := newAuthInterceptor(username, token)
+func newClient(httpClient connect.HTTPClient, remote, token string) *client {
+	authInterceptor := newAuthInterceptor(token)
 	options := connect.WithClientOptions(
 		connect.WithInterceptors(authInterceptor),
 		connect.WithHTTPGet(),
@@ -137,21 +137,21 @@ func (c *client) getResource(resourceName *modulev1.ResourceRef_Name) tea.Cmd {
 	}
 }
 
-// newAuthInterceptor creates a client-only interceptor for adding
-// authentication to requests.
-func newAuthInterceptor(username, token string) connect.UnaryInterceptorFunc {
+// newAuthInterceptor creates a client-only interceptor for adding authentication to requests.
+func newAuthInterceptor(token string) connect.UnaryInterceptorFunc {
 	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 		return connect.UnaryFunc(func(
 			ctx context.Context,
 			req connect.AnyRequest,
 		) (connect.AnyResponse, error) {
-			if req.Spec().IsClient {
+			if !req.Spec().IsClient {
+				return nil, fmt.Errorf("auth interceptor is a client-only interceptor")
+			}
+			if token != "" {
 				req.Header().Set(
 					"Authorization",
-					"Basic "+base64.StdEncoding.EncodeToString([]byte(username+":"+token)),
+					"Bearer "+base64.StdEncoding.EncodeToString([]byte(token)),
 				)
-			} else {
-				return nil, fmt.Errorf("auth interceptor is a client-only interceptor")
 			}
 			return next(ctx, req)
 		})

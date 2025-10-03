@@ -65,7 +65,6 @@ func run(_ context.Context, args []string) error {
 	var (
 		// `-r` is for reference, which should generally be preferred.
 		remoteFlag    = fs.StringLong("remote", "", "BSR remote")
-		usernameFlag  = fs.String('u', "username", "", "Set username for authentication (default: login for remote in ~/.netrc)")
 		tokenFlag     = fs.String('t', "token", "", "Set token for authentication (default: password for remote in ~/.netrc)")
 		referenceFlag = fs.String('r', "reference", "", "Set BSR reference to open")
 	)
@@ -73,9 +72,6 @@ func run(_ context.Context, args []string) error {
 		fmt.Printf("%s\n", ffhelp.Flags(fs))
 		return err
 	}
-
-	username := *usernameFlag
-	token := *tokenFlag
 
 	parsedRemote, parsedReference, err := parseReference(*referenceFlag)
 	if err != nil {
@@ -91,22 +87,13 @@ func run(_ context.Context, args []string) error {
 		return fmt.Errorf("remote cannot be empty")
 	}
 
-	// Either username && token should be provided at the CLI, or they should be loaded from the ~/.netrc.
-	if (username == "" && token != "") || (username != "" && token == "") {
-		return fmt.Errorf("must set both username and token flags, or neither (and load authentication from ~/.netrc)")
-	}
-	if username == "" && token == "" {
+	token := *tokenFlag
+	if token == "" {
 		var err error
-		username, token, err = getUserTokenFromNetrc(remote)
+		token, err = getTokenFromNetrc(remote)
 		if err != nil {
 			return fmt.Errorf("getting netrc credentials for remote %q: %w", remote, err)
 		}
-	}
-	if username == "" {
-		return fmt.Errorf("username must be set, either by flag or in the ~/.netrc file")
-	}
-	if token == "" {
-		return fmt.Errorf("token must be set, either by flag or in the ~/.netrc file")
 	}
 
 	httpClient := httplb.NewClient()
@@ -129,9 +116,8 @@ func run(_ context.Context, args []string) error {
 
 	model := model{
 		state:            initialState,
-		currentOwner:     username,
 		spinner:          spinner.New(spinner.WithSpinner(spinner.Dot)),
-		client:           newClient(httpClient, remote, username, token),
+		client:           newClient(httpClient, remote, token),
 		help:             help.New(),
 		keys:             keys,
 		currentReference: parsedReference,
@@ -605,30 +591,28 @@ type errMsg struct{ err error }
 // error interface on the message.
 func (e errMsg) Error() string { return e.err.Error() }
 
-// getUserTokenFromNetrc returns the username and token for the remote in the
-// ~/.netrc file, if it exists.
-func getUserTokenFromNetrc(remote string) (username string, token string, err error) {
+// getTokenFromNetrc returns the token for the remote in the ~/.netrc file, if it exists.
+func getTokenFromNetrc(remote string) (string, error) {
 	currentUser, err := user.Current()
 	if err != nil {
-		return "", "", fmt.Errorf("getting current user: %s", err)
+		return "", fmt.Errorf("getting current user: %s", err)
 	}
 	netrcPath := filepath.Join(currentUser.HomeDir, ".netrc")
 	// Give up if we can't stat the netrcPath.
 	if _, err := os.Stat(netrcPath); err != nil {
-		return "", "", nil
+		return "", nil
 	}
 	parsedNetrc, err := netrc.Parse(netrcPath)
 	if err != nil {
-		return "", "", fmt.Errorf("parsing netrc: %s", err)
+		return "", fmt.Errorf("parsing netrc: %s", err)
 	}
 	netrcRemote := parsedNetrc.Machine(remote)
 	if netrcRemote == nil {
 		// We don't have the remote in the .netrc; abort.
-		return "", "", nil
+		return "", nil
 	}
-	username = netrcRemote.Get("login")
-	token = netrcRemote.Get("password")
-	return username, token, nil
+	token := netrcRemote.Get("password")
+	return token, nil
 }
 
 func highlightFile(filename, fileContents string, isDark bool) (string, error) {
