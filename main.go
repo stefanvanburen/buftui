@@ -36,6 +36,8 @@ import (
 const (
 	bufBlue = "#0e5df5"
 	bufTeal = "#5fdcff"
+
+	defaultRemote = "buf.build"
 )
 
 var (
@@ -62,7 +64,7 @@ func run(_ context.Context, args []string) error {
 	fs := ff.NewFlagSet("buftui")
 	var (
 		// `-r` is for reference, which should generally be preferred.
-		remoteFlag    = fs.StringLong("remote", "buf.build", "BSR remote")
+		remoteFlag    = fs.StringLong("remote", "", "BSR remote")
 		usernameFlag  = fs.String('u', "username", "", "Set username for authentication (default: login for remote in ~/.netrc)")
 		tokenFlag     = fs.String('t', "token", "", "Set token for authentication (default: password for remote in ~/.netrc)")
 		referenceFlag = fs.String('r', "reference", "", "Set BSR reference to open")
@@ -83,7 +85,7 @@ func run(_ context.Context, args []string) error {
 		return fmt.Errorf("cannot provide conflicting `--remote` flag (%s) and reference remote (%s)", *remoteFlag, parsedRemote)
 	}
 	// We know the remotes at least aren't conflicting, so take whichever is non-empty.
-	remote := cmp.Or(*remoteFlag, parsedRemote)
+	remote := cmp.Or(parsedRemote, *remoteFlag, defaultRemote)
 	// Sanity check for `--remote ""`, or an invalid parsed reference.
 	if remote == "" {
 		return fmt.Errorf("remote cannot be empty")
