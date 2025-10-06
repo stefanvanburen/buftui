@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.19.0-20250924144421-cb55f06efbd2.1
-	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.9-20250924144421-cb55f06efbd2.1
+	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.10-20250924144421-cb55f06efbd2.1
 	buf.build/go/protovalidate v1.0.0
 	connectrpc.com/connect v1.19.0
 	github.com/alecthomas/chroma/v2 v2.20.0
@@ -16,11 +16,11 @@ require (
 	github.com/jdx/go-netrc v1.0.0
 	github.com/peterbourgon/ff/v4 v4.0.0-beta.1
 	go.akshayshah.org/attest v1.1.0
-	google.golang.org/protobuf v1.36.9
+	google.golang.org/protobuf v1.36.10
 )
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.9-20250912141014-52f32327d4b0.1 // indirect
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.10-20250717185734-6c6e0d3c608e.1 // indirect
 	cel.dev/expr v0.24.0 // indirect
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
@@ -33,7 +33,7 @@ require (
 	github.com/charmbracelet/x/windows v0.2.1 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/google/cel-go v0.26.1 // indirect
-	github.com/google/go-cmp v0.6.0 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
