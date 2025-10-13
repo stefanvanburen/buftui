@@ -3,10 +3,10 @@ module github.com/stefanvanburen/buftui
 go 1.25.0
 
 require (
-	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.19.0-20250924144421-cb55f06efbd2.1
+	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.19.1-20250924144421-cb55f06efbd2.1
 	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.10-20250924144421-cb55f06efbd2.1
 	buf.build/go/protovalidate v1.0.0
-	connectrpc.com/connect v1.19.0
+	connectrpc.com/connect v1.19.1
 	github.com/alecthomas/chroma/v2 v2.20.0
 	github.com/bufbuild/httplb v0.4.1
 	github.com/charmbracelet/bubbles/v2 v2.0.0-beta.1
