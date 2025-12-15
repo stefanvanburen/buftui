@@ -16,7 +16,7 @@ require (
 	github.com/jdx/go-netrc v1.0.0
 	github.com/peterbourgon/ff/v4 v4.0.0-beta.1
 	go.akshayshah.org/attest v1.1.0
-	google.golang.org/protobuf v1.36.10
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
