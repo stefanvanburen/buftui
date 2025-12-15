@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.19.1-20251202164234-62b14f0b533c.2
 	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.11-20251202164234-62b14f0b533c.1
-	buf.build/go/protovalidate v1.0.1
+	buf.build/go/protovalidate v1.1.0
 	connectrpc.com/connect v1.19.1
 	github.com/alecthomas/chroma/v2 v2.20.0
 	github.com/bufbuild/httplb v0.4.1
