@@ -381,7 +381,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Don't allow a submission if the input doesn't validate.
 					return m, nil
 				}
-				m.currentOwner = m.searchInput.Value()
+				searchInput := m.searchInput.Value()
+				// Try to parse as a reference
+				parsedRemote, parsedReference, err := parseReference(searchInput)
+				if err == nil && parsedReference != nil {
+					// It's a reference, navigate directly to it
+					if parsedRemote != "" && m.remote != parsedRemote && parsedRemote != defaultRemote {
+						m.err = fmt.Errorf("cannot navigate to reference on different remote (%s) than current remote (%s)", parsedRemote, m.remote)
+						return m, nil
+					}
+					m.currentReference = parsedReference
+					m.state = modelStateLoadingReference
+					return m, m.client.getResource(parsedReference)
+				}
+				// Otherwise, treat it as an owner search
+				m.currentOwner = searchInput
 				// TODO: Clear search input?
 				return m, m.client.listModules(m.currentOwner)
 			}
@@ -784,6 +798,11 @@ func (m model) FullHelp() [][]key.Binding {
 func newSearchInput(isDark bool) textinput.Model {
 	searchInput := textinput.New()
 	searchInput.Validate = func(input string) error {
+		// Try to parse as a reference first
+		if _, _, err := parseReference(input); err == nil {
+			return nil
+		}
+		// Fall back to validating as an owner name
 		return protovalidate.Validate(&ownerv1.OwnerRef{
 			Value: &ownerv1.OwnerRef_Name{Name: input},
 		})
@@ -797,7 +816,7 @@ func newSearchInput(isDark bool) textinput.Model {
 	searchInput.Styles.Cursor.Color = colorBackground
 
 	searchInput.Focus()
-	searchInput.Placeholder = "bufbuild"
+	searchInput.Placeholder = "bufbuild or bufbuild/registry:main"
 	return searchInput
 }
 
