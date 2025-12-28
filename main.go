@@ -99,7 +99,7 @@ func run(_ context.Context, args []string) error {
 	httpClient := httplb.NewClient()
 	defer httpClient.Close()
 
-	initialState := modelStateSearching
+	initialState := modelStateNavigating
 	if parsedReference != nil {
 		initialState = modelStateLoadingReference
 	}
@@ -121,7 +121,7 @@ func run(_ context.Context, args []string) error {
 		help:             help.New(),
 		keys:             keys,
 		currentReference: parsedReference,
-		searchInput:      newSearchInput(false),
+		navigateInput:    newNavigateInput(false),
 		remote:           remote,
 		fileViewport:     viewport.New(),
 
@@ -143,7 +143,7 @@ const (
 	modelStateBrowsingCommits
 	modelStateBrowsingCommitContents
 	modelStateBrowsingCommitFileContents
-	modelStateSearching
+	modelStateNavigating
 	modelStateLoadingReference
 	modelStateLoadingModules
 	modelStateLoadingCommits
@@ -178,7 +178,7 @@ type model struct {
 	commitList      list.Model
 	commitFilesList list.Model
 	fileViewport    viewport.Model
-	searchInput     textinput.Model
+	navigateInput   textinput.Model
 	help            help.Model
 
 	isDark bool
@@ -248,7 +248,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commitFilesList.SetWidth(msg.Width / 2)
 		m.fileViewport.SetHeight(msg.Height)
 		m.fileViewport.SetWidth(msg.Width / 2)
-		m.searchInput.SetWidth(min(msg.Width, 50)) // clamped at 50 characters wide
+		m.navigateInput.SetWidth(min(msg.Width, 50)) // clamped at 50 characters wide
 
 	case resourceMsg:
 		switch retrievedResource := msg.retrievedResource.Value.(type) {
@@ -365,25 +365,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
-		case key.Matches(msg, m.keys.Search):
-			// From anywhere other than the search state, "s"
-			// enters a search state.
-			if m.state != modelStateSearching {
-				// "s" -> "search"
-				m.state = modelStateSearching
-				m.searchInput.Reset()
+		case key.Matches(msg, m.keys.Navigate):
+			// From anywhere other than the navigate state, "g"
+			// enters a navigate state.
+			if m.state != modelStateNavigating {
+				// "g" -> "navigate"
+				m.state = modelStateNavigating
+				m.navigateInput.Reset()
 				return m, nil
 			}
 		case key.Matches(msg, m.keys.Enter):
 			switch m.state {
-			case modelStateSearching:
-				if m.searchInput.Err != nil {
+			case modelStateNavigating:
+				if m.navigateInput.Err != nil {
 					// Don't allow a submission if the input doesn't validate.
 					return m, nil
 				}
-				searchInput := m.searchInput.Value()
+				navigateValue := m.navigateInput.Value()
 				// Try to parse as a reference
-				parsedRemote, parsedReference, err := parseReference(searchInput)
+				parsedRemote, parsedReference, err := parseReference(navigateValue)
 				if err == nil && parsedReference != nil {
 					// It's a reference, navigate directly to it
 					if parsedRemote != "" && m.remote != parsedRemote && parsedRemote != defaultRemote {
@@ -394,9 +394,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = modelStateLoadingReference
 					return m, m.client.getResource(parsedReference)
 				}
-				// Otherwise, treat it as an owner search
-				m.currentOwner = searchInput
-				// TODO: Clear search input?
+				// Otherwise, treat it as an owner
+				m.currentOwner = navigateValue
+				// TODO: Clear navigate input?
 				return m, m.client.listModules(m.currentOwner)
 			}
 			// enter or l are equivalent for all the cases below.
@@ -540,8 +540,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fileViewport.GotoTop()
 	case modelStateBrowsingCommitFileContents:
 		m.fileViewport, cmd = m.fileViewport.Update(msg)
-	case modelStateSearching:
-		m.searchInput, cmd = m.searchInput.Update(msg)
+	case modelStateNavigating:
+		m.navigateInput, cmd = m.navigateInput.Update(msg)
 	}
 	return m, cmd
 }
@@ -562,7 +562,7 @@ func (m model) View() string {
 		view = m.spinner.View() + " Loading reference"
 	case modelStateBrowsingModules:
 		if len(m.currentModules) == 0 {
-			view += fmt.Sprintf("No modules found for owner; use %s to enter another owner", keys.Search.Keys())
+			view += fmt.Sprintf("No modules found for owner; use %s to navigate to another owner", keys.Navigate.Keys())
 		} else {
 			view += m.moduleList.View()
 		}
@@ -587,11 +587,11 @@ func (m model) View() string {
 			fileViewStyle.Render(m.fileViewport.View()),
 		)
 		view += "\n\n" + m.help.View(m)
-	case modelStateSearching:
-		header := "Enter an owner (user or organization)"
-		view = header + "\n\n" + m.searchInput.View()
-		if m.searchInput.Err != nil {
-			view += "\n\n" + fmt.Sprintf("err: %s", m.searchInput.Err)
+	case modelStateNavigating:
+		header := "Navigate to owner or reference (e.g., owner/module or owner/module:ref)"
+		view = header + "\n\n" + m.navigateInput.View()
+		if m.navigateInput.Err != nil {
+			view += "\n\n" + fmt.Sprintf("err: %s", m.navigateInput.Err)
 		}
 	default:
 		return fmt.Sprintf("unaccounted state: %v", m.state)
@@ -707,14 +707,14 @@ func parseReference(reference string) (remote string, resourceRef *modulev1.Reso
 // keyMap defines a set of keybindings. To work for help it must satisfy
 // key.Map. It could also very easily be a map[string]key.Binding.
 type keyMap struct {
-	Up     key.Binding
-	Down   key.Binding
-	Left   key.Binding
-	Right  key.Binding
-	Search key.Binding
-	Enter  key.Binding
-	Help   key.Binding
-	Quit   key.Binding
+	Up   key.Binding
+	Down key.Binding
+	Left key.Binding
+	Right key.Binding
+	Navigate key.Binding
+	Enter key.Binding
+	Help key.Binding
+	Quit key.Binding
 	Browse key.Binding
 }
 
@@ -739,11 +739,11 @@ var keys = keyMap{
 	),
 	Enter: key.NewBinding(
 		key.WithKeys("enter"),
-		key.WithHelp("enter", "search"),
+		key.WithHelp("enter", "navigate"),
 	),
-	Search: key.NewBinding(
-		key.WithKeys("s"),
-		key.WithHelp("s", "enter owner"),
+	Navigate: key.NewBinding(
+		key.WithKeys("g"),
+		key.WithHelp("g", "navigate to owner/module"),
 	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
@@ -778,7 +778,7 @@ func (m model) ShortHelp() []key.Binding {
 	case modelStateBrowsingCommitFileContents:
 		// Can't go Right while browsing file contents; already at the "bottom".
 		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left}
-	case modelStateSearching:
+	case modelStateNavigating:
 		shortHelp = []key.Binding{keys.Enter}
 	default:
 		// In the other states, just show Help and Quit.
@@ -791,33 +791,33 @@ func (m model) ShortHelp() []key.Binding {
 func (m model) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		m.ShortHelp(),
-		{keys.Search, keys.Help, keys.Quit},
+		{keys.Navigate, keys.Help, keys.Quit},
 	}
 }
 
-func newSearchInput(isDark bool) textinput.Model {
-	searchInput := textinput.New()
-	searchInput.Validate = func(input string) error {
+func newNavigateInput(isDark bool) textinput.Model {
+	input := textinput.New()
+	input.Validate = func(inputStr string) error {
 		// Try to parse as a reference first
-		if _, _, err := parseReference(input); err == nil {
+		if _, _, err := parseReference(inputStr); err == nil {
 			return nil
 		}
 		// Fall back to validating as an owner name
 		return protovalidate.Validate(&ownerv1.OwnerRef{
-			Value: &ownerv1.OwnerRef_Name{Name: input},
+			Value: &ownerv1.OwnerRef_Name{Name: inputStr},
 		})
 	}
 	// Style the input.
-	searchInput.Styles = textinput.DefaultStyles(isDark)
+	input.Styles = textinput.DefaultStyles(isDark)
 	style := lipgloss.NewStyle().Foreground(colorForeground).Background(colorBackground)
-	searchInput.Styles.Focused.Placeholder = style
-	searchInput.Styles.Focused.Prompt = style
-	searchInput.Styles.Focused.Text = style
-	searchInput.Styles.Cursor.Color = colorBackground
+	input.Styles.Focused.Placeholder = style
+	input.Styles.Focused.Prompt = style
+	input.Styles.Focused.Text = style
+	input.Styles.Cursor.Color = colorBackground
 
-	searchInput.Focus()
-	searchInput.Placeholder = "bufbuild or bufbuild/registry:main"
-	return searchInput
+	input.Focus()
+	input.Placeholder = "bufbuild/registry:main"
+	return input
 }
 
 type module struct {
