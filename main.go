@@ -337,22 +337,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		commitFileItem := m.commitFilesList.SelectedItem()
 		commitFile, ok := commitFileItem.(*commitFile)
 		if !ok {
-			panic("only commit files should be in commit files list")
-		}
-		selectedFileName := commitFile.underlying.Path
-		var fileContents string
-		for _, file := range m.currentCommitFiles {
-			if file.Path == selectedFileName {
-				fileContents = string(file.Content)
-				break
-			}
-		}
-		highlightedFile, err := highlightFile(selectedFileName, fileContents, m.isDark)
-		if err != nil {
-			m.err = fmt.Errorf("can't highlight file: %w", err)
+			m.err = fmt.Errorf("invalid list item type: expected commitFile")
 			return m, tea.Quit
 		}
-		m.fileViewport.SetContent(highlightedFile)
+		if err := m.updateFileView(commitFile.underlying); err != nil {
+			m.err = err
+			return m, tea.Quit
+		}
 		return m, nil
 
 	case errMsg:
@@ -412,7 +403,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				item := m.moduleList.SelectedItem()
 				module, ok := item.(*module)
 				if !ok {
-					panic("items in moduleList should be modules")
+					m.err = fmt.Errorf("invalid list item type: expected module")
+					return m, tea.Quit
 				}
 				m.currentModule = module.underlying.Name
 				return m, m.client.listCommits(m.currentOwner, m.currentModule)
@@ -425,7 +417,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				item := m.commitList.SelectedItem()
 				commit, ok := item.(*commit)
 				if !ok {
-					panic("items in commitList should be commits")
+					m.err = fmt.Errorf("invalid list item type: expected commit")
+					return m, tea.Quit
 				}
 				m.currentCommitID = commit.underlying.Id
 				return m, m.client.getCommitContent(m.currentCommitID)
@@ -464,34 +457,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.state {
 			case modelStateBrowsingCommitFileContents:
 				list = m.commitFilesList
-				// TODO: Can we go directly to the line that the user is viewing?
-				// For now, do the same as modelStateBrowsingCommitContents.
 				commitFile, ok := m.commitFilesList.SelectedItem().(*commitFile)
 				if !ok {
-					panic("selected item is not a commitFile")
+					m.err = fmt.Errorf("invalid list item type: expected commitFile")
+					return m, tea.Quit
 				}
-				url = "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule + "/file/" + m.currentCommitID + ":" + commitFile.underlying.Path
+				url = m.buildBrowserURL("file", commitFile.underlying.Path)
 			case modelStateBrowsingCommitContents:
 				list = m.commitFilesList
 				commitFile, ok := m.commitFilesList.SelectedItem().(*commitFile)
 				if !ok {
-					panic("selected item is not a commitFile")
+					m.err = fmt.Errorf("invalid list item type: expected commitFile")
+					return m, tea.Quit
 				}
-				url = "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule + "/file/" + m.currentCommitID + ":" + commitFile.underlying.Path
+				url = m.buildBrowserURL("file", commitFile.underlying.Path)
 			case modelStateBrowsingCommits:
 				list = m.commitList
 				commit, ok := m.commitList.SelectedItem().(*commit)
 				if !ok {
-					panic("selected item is not a commit")
+					m.err = fmt.Errorf("invalid list item type: expected commit")
+					return m, tea.Quit
 				}
-				url = "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule + "/tree/" + commit.underlying.Id
+				url = m.buildBrowserURL("tree", commit.underlying.Id)
 			case modelStateBrowsingModules:
 				list = m.moduleList
 				module, ok := m.moduleList.SelectedItem().(*module)
 				if !ok {
-					panic("selected item is not a module")
+					m.err = fmt.Errorf("invalid list item type: expected module")
+					return m, tea.Quit
 				}
-				url = "https://" + m.remote + "/" + m.currentOwner + "/" + module.underlying.Name
+				url = m.buildBrowserURL("module", module.underlying.Name)
 			}
 
 			if url != "" {
@@ -499,7 +494,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.err = fmt.Errorf("opening URL %q: %w", url, err)
 					return m, nil
 				}
-				// TODO: Where does this show? Does it need more time?
 				return m, list.NewStatusMessage("opened " + url)
 			}
 		}
@@ -520,22 +514,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		item := m.commitFilesList.SelectedItem()
 		commitFile, ok := item.(*commitFile)
 		if !ok {
-			panic("only commit files should be in item list")
-		}
-		selectedFileName := commitFile.underlying.Path
-		var fileContents string
-		for _, file := range m.currentCommitFiles {
-			if file.Path == selectedFileName {
-				fileContents = string(file.Content)
-				break
-			}
-		}
-		highlightedFile, err := highlightFile(selectedFileName, fileContents, m.isDark)
-		if err != nil {
-			m.err = fmt.Errorf("can't highlight file: %w", err)
+			m.err = fmt.Errorf("invalid list item type: expected commitFile")
 			return m, tea.Quit
 		}
-		m.fileViewport.SetContent(highlightedFile)
+		if err := m.updateFileView(commitFile.underlying); err != nil {
+			m.err = err
+			return m, tea.Quit
+		}
 		// When we switch files, we reset the position of the viewport back to the top.
 		m.fileViewport.GotoTop()
 	case modelStateBrowsingCommitFileContents:
@@ -818,6 +803,31 @@ func newNavigateInput(isDark bool) textinput.Model {
 	input.Focus()
 	input.Placeholder = "bufbuild/registry:main"
 	return input
+}
+
+// updateFileView updates the file viewport with highlighted content for the given file.
+func (m *model) updateFileView(file *modulev1.File) error {
+	highlightedFile, err := highlightFile(file.Path, string(file.Content), m.isDark)
+	if err != nil {
+		return fmt.Errorf("highlighting file: %w", err)
+	}
+	m.fileViewport.SetContent(highlightedFile)
+	return nil
+}
+
+// buildBrowserURL constructs a URL for the browser based on the current context.
+// resourceType should be "module", "tree", or "file".
+func (m *model) buildBrowserURL(resourceType string, resourcePath string) string {
+	base := "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule
+	switch resourceType {
+	case "module":
+		return "https://" + m.remote + "/" + m.currentOwner + "/" + resourcePath
+	case "tree":
+		return base + "/tree/" + resourcePath
+	case "file":
+		return base + "/file/" + m.currentCommitID + ":" + resourcePath
+	}
+	return ""
 }
 
 type module struct {

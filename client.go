@@ -50,7 +50,7 @@ func (c *client) listModules(currentOwner string) tea.Cmd {
 		})
 		response, err := c.moduleServiceClient.ListModules(context.Background(), request)
 		if err != nil {
-			return errMsg{fmt.Errorf("listing modules: %s", err)}
+			return errMsg{fmt.Errorf("listing modules: %w", err)}
 		}
 		return modulesMsg(response.Msg.Modules)
 	}
@@ -73,7 +73,7 @@ func (c *client) listCommits(currentOwner, currentModule string) tea.Cmd {
 		})
 		response, err := c.commitServiceClient.ListCommits(context.Background(), request)
 		if err != nil {
-			return errMsg{fmt.Errorf("getting commits: %s", err)}
+			return errMsg{fmt.Errorf("getting commits: %w", err)}
 		}
 		return commitsMsg(response.Msg.Commits)
 	}
@@ -96,7 +96,7 @@ func (c *client) getCommitContent(commitID string) tea.Cmd {
 		})
 		response, err := c.downloadServiceClient.Download(context.Background(), request)
 		if err != nil {
-			return errMsg{fmt.Errorf("getting commit content: %s", err)}
+			return errMsg{fmt.Errorf("getting commit content: %w", err)}
 		}
 		if len(response.Msg.Contents) != 1 {
 			return errMsg{fmt.Errorf("requested 1 commit contents, got %v", len(response.Msg.Contents))}
@@ -125,7 +125,7 @@ func (c *client) getResource(resourceName *modulev1.ResourceRef_Name) tea.Cmd {
 		})
 		response, err := c.resourceServiceClient.GetResources(context.Background(), request)
 		if err != nil {
-			return errMsg{fmt.Errorf("getting resource: %s", err)}
+			return errMsg{fmt.Errorf("getting resource: %w", err)}
 		}
 		if len(response.Msg.Resources) != 1 {
 			return errMsg{fmt.Errorf("requested 1 resource, got %v", len(response.Msg.Resources))}
