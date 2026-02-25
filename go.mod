@@ -10,9 +10,8 @@ require (
 	charm.land/bubbletea/v2 v2.0.0
 	charm.land/lipgloss/v2 v2.0.0
 	connectrpc.com/connect v1.19.1
-	github.com/alecthomas/chroma/v2 v2.23.1
+	github.com/alecthomas/chroma/v2 v2.23.0
 	github.com/bufbuild/httplb v0.4.1
-	github.com/charmbracelet/x/exp/teatest/v2 v2.0.0-20260223200540-d6a276319c45
 	github.com/cli/browser v1.3.0
 	github.com/jdx/go-netrc v1.0.0
 	github.com/peterbourgon/ff/v4 v4.0.0-beta.1
