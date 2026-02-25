@@ -18,15 +18,15 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/bufbuild/httplb"
-	"github.com/charmbracelet/bubbles/v2/help"
-	"github.com/charmbracelet/bubbles/v2/key"
-	"github.com/charmbracelet/bubbles/v2/list"
-	"github.com/charmbracelet/bubbles/v2/spinner"
-	"github.com/charmbracelet/bubbles/v2/textinput"
-	"github.com/charmbracelet/bubbles/v2/viewport"
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
-	"github.com/charmbracelet/lipgloss/v2/compat"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/compat"
 	"github.com/cli/browser"
 	"github.com/jdx/go-netrc"
 	"github.com/peterbourgon/ff/v4"
@@ -130,7 +130,7 @@ func run(_ context.Context, args []string) error {
 		commitFilesList: commitFilesList,
 	}
 
-	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
+	if _, err := tea.NewProgram(model).Run(); err != nil {
 		return err
 	}
 	return nil
@@ -236,7 +236,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		// If we set a width on the help menu it can gracefully truncate
 		// its view as needed.
-		m.help.Width = msg.Width
+		m.help.SetWidth(msg.Width)
 
 		// TODO: Make these values responsive, based on the number of items received; these
 		// should be the max values.
@@ -350,7 +350,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
@@ -531,9 +531,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m model) View() string {
+func (m model) View() tea.View {
 	if m.err != nil {
-		return fmt.Sprintf("error: %v", m.err)
+		return tea.NewView(fmt.Sprintf("error: %v", m.err))
 	}
 	var view string
 	switch m.state {
@@ -579,9 +579,11 @@ func (m model) View() string {
 			view += "\n\n" + fmt.Sprintf("err: %s", m.navigateInput.Err)
 		}
 	default:
-		return fmt.Sprintf("unaccounted state: %v", m.state)
+		return tea.NewView(fmt.Sprintf("unaccounted state: %v", m.state))
 	}
-	return view
+	v := tea.NewView(view)
+	v.AltScreen = true
+	return v
 }
 
 type errMsg struct{ err error }
@@ -793,12 +795,12 @@ func newNavigateInput(isDark bool) textinput.Model {
 		})
 	}
 	// Style the input.
-	input.Styles = textinput.DefaultStyles(isDark)
+	styles := textinput.DefaultStyles(isDark)
 	style := lipgloss.NewStyle().Foreground(colorForeground).Background(colorBackground)
-	input.Styles.Focused.Placeholder = style
-	input.Styles.Focused.Prompt = style
-	input.Styles.Focused.Text = style
-	input.Styles.Cursor.Color = colorBackground
+	styles.Focused.Placeholder = style
+	styles.Focused.Prompt = style
+	styles.Focused.Text = style
+	input.SetStyles(styles)
 
 	input.Focus()
 	input.Placeholder = "bufbuild/registry:main"

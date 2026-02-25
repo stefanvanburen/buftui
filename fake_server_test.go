@@ -11,11 +11,11 @@ import (
 
 	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/module/v1/modulev1connect"
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
-	"github.com/charmbracelet/bubbles/v2/help"
-	"github.com/charmbracelet/bubbles/v2/list"
-	"github.com/charmbracelet/bubbles/v2/spinner"
-	"github.com/charmbracelet/bubbles/v2/viewport"
-	tea "github.com/charmbracelet/bubbletea/v2"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/exp/teatest/v2"
 	"go.akshayshah.org/attest"
 	"go.akshayshah.org/memhttp"
@@ -436,8 +436,9 @@ func TestViewDisplay(t *testing.T) {
 			tt.setup(&m)
 
 			view := m.View()
+			viewContent := view.Content
 			for _, text := range tt.contains {
-				attest.True(t, strings.Contains(view, text), attest.Sprintf("view should contain %q", text))
+				attest.True(t, strings.Contains(viewContent, text), attest.Sprintf("view should contain %q", text))
 			}
 		})
 	}
