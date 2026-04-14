@@ -281,10 +281,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		modules := make([]list.Item, len(m.currentModules))
 		for i, currentModule := range m.currentModules {
-			modules[i] = &module{currentModule}
+			modules[i] = &module{underlying: currentModule, remote: m.remote, owner: m.currentOwner}
 		}
 		m.moduleList.SetItems(modules)
-		m.moduleList.Title = fmt.Sprintf("Modules (Owner: %s)", m.currentOwner)
+		ownerURL := "https://" + m.remote + "/" + m.currentOwner
+		m.moduleList.Title = "Modules (Owner: " + renderHyperlink(m.currentOwner, ownerURL) + ")"
 		m.moduleList.Styles = m.listStyles
 		m.moduleList.InfiniteScrolling = false
 		m.moduleList.AdditionalFullHelpKeys = func() []key.Binding {
@@ -303,10 +304,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		commits := make([]list.Item, len(m.currentCommits))
 		for i, currentCommit := range m.currentCommits {
-			commits[i] = &commit{currentCommit}
+			commits[i] = &commit{underlying: currentCommit, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule}
 		}
 		m.commitList.SetItems(commits)
-		m.commitList.Title = fmt.Sprintf("Commits (Module: %s/%s)", m.currentOwner, m.currentModule)
+		moduleURL := "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule
+		m.commitList.Title = "Commits (Module: " + renderHyperlink(m.currentOwner+"/"+m.currentModule, moduleURL) + ")"
 		m.commitList.Styles = m.listStyles
 		m.commitList.InfiniteScrolling = false
 		m.commitList.AdditionalFullHelpKeys = func() []key.Binding {
@@ -322,10 +324,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentCommitFiles = msg.Files
 		commitFiles := make([]list.Item, len(m.currentCommitFiles))
 		for i, currentCommitFile := range m.currentCommitFiles {
-			commitFiles[i] = &commitFile{currentCommitFile}
+			commitFiles[i] = &commitFile{underlying: currentCommitFile, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule, commitID: m.currentCommitID}
 		}
 		m.commitFilesList.SetItems(commitFiles)
-		m.commitFilesList.Title = fmt.Sprintf("Commit %s (Module: %s/%s)", m.currentCommitID, m.currentOwner, m.currentModule)
+		{
+			commitURL := "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule + "/commits/" + m.currentCommitID
+			moduleURL := "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule
+			m.commitFilesList.Title = "Commit " + renderHyperlink(m.currentCommitID, commitURL) + " (Module: " + renderHyperlink(m.currentOwner+"/"+m.currentModule, moduleURL) + ")"
+		}
 		m.commitFilesList.Styles = m.listStyles
 		m.commitFilesList.InfiniteScrolling = false
 		m.commitFilesList.AdditionalFullHelpKeys = func() []key.Binding {
@@ -494,7 +500,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.err = fmt.Errorf("opening URL %q: %w", url, err)
 					return m, nil
 				}
-				return m, list.NewStatusMessage("opened " + url)
+				return m, list.NewStatusMessage("opened " + lipgloss.NewStyle().Hyperlink(url).Render(url))
 			}
 		}
 	case spinner.TickMsg:
@@ -825,15 +831,22 @@ func (m *model) buildBrowserURL(resourceType string, resourcePath string) string
 	case "module":
 		return "https://" + m.remote + "/" + m.currentOwner + "/" + resourcePath
 	case "tree":
-		return base + "/tree/" + resourcePath
+		return base + "/commits/" + resourcePath
 	case "file":
 		return base + "/file/" + m.currentCommitID + ":" + resourcePath
 	}
 	return ""
 }
 
+// renderHyperlink renders text as a terminal hyperlink to url.
+func renderHyperlink(text, url string) string {
+	return lipgloss.NewStyle().Hyperlink(url).Render(text)
+}
+
 type module struct {
 	underlying *modulev1.Module
+	remote     string
+	owner      string
 }
 
 // FilterValue implements [list.Item].
@@ -851,7 +864,8 @@ func (m *module) Title() string {
 	if m.underlying.State == modulev1.ModuleState_MODULE_STATE_DEPRECATED {
 		title += " (Deprecated)"
 	}
-	return title
+	url := "https://" + m.remote + "/" + m.owner + "/" + m.underlying.Name
+	return renderHyperlink(title, url)
 }
 
 // Description implements [list.DefaultItem].
@@ -862,6 +876,9 @@ func (m *module) Description() string {
 
 type commit struct {
 	underlying *modulev1.Commit
+	remote     string
+	owner      string
+	moduleName string
 }
 
 // FilterValue implements list.Item.
@@ -872,7 +889,8 @@ func (m *commit) FilterValue() string {
 
 // Title implements list.DefaultItem.
 func (m *commit) Title() string {
-	return m.underlying.Id
+	url := "https://" + m.remote + "/" + m.owner + "/" + m.moduleName + "/commits/" + m.underlying.Id
+	return renderHyperlink(m.underlying.Id, url)
 }
 
 // Description implements list.DefaultItem.
@@ -883,6 +901,10 @@ func (m *commit) Description() string {
 
 type commitFile struct {
 	underlying *modulev1.File
+	remote     string
+	owner      string
+	moduleName string
+	commitID   string
 }
 
 // FilterValue implements list.Item.
@@ -892,7 +914,8 @@ func (m *commitFile) FilterValue() string {
 
 // Title implements list.DefaultItem.
 func (m *commitFile) Title() string {
-	return m.underlying.Path
+	url := "https://" + m.remote + "/" + m.owner + "/" + m.moduleName + "/file/" + m.commitID + ":" + m.underlying.Path
+	return renderHyperlink(m.underlying.Path, url)
 }
 
 // Description implements list.DefaultItem.
