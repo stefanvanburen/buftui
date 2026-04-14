@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 
 	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/module/v1/modulev1connect"
@@ -148,10 +147,7 @@ func newAuthInterceptor(token string) connect.UnaryInterceptorFunc {
 				return nil, fmt.Errorf("auth interceptor is a client-only interceptor")
 			}
 			if token != "" {
-				req.Header().Set(
-					"Authorization",
-					"Bearer "+base64.StdEncoding.EncodeToString([]byte(token)),
-				)
+				req.Header().Set("Authorization", "Bearer "+token)
 			}
 			return next(ctx, req)
 		})
