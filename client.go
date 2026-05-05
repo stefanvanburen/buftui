@@ -7,8 +7,8 @@ import (
 	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/module/v1/modulev1connect"
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
 	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
-	"connectrpc.com/connect"
 	tea "charm.land/bubbletea/v2"
+	"connectrpc.com/connect"
 )
 
 type client struct {

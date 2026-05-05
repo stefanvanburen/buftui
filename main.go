@@ -14,11 +14,6 @@ import (
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
 	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
 	"buf.build/go/protovalidate"
-	"github.com/alecthomas/chroma/v2/formatters"
-	"github.com/alecthomas/chroma/v2/lexers"
-	"github.com/alecthomas/chroma/v2/styles"
-	"charm.land/glamour/v2"
-	"github.com/bufbuild/httplb"
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
@@ -26,8 +21,13 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/compat"
+	"github.com/alecthomas/chroma/v2/formatters"
+	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/alecthomas/chroma/v2/styles"
+	"github.com/bufbuild/httplb"
 	"github.com/cli/browser"
 	"github.com/jdx/go-netrc"
 	"github.com/peterbourgon/ff/v4"
@@ -37,6 +37,9 @@ import (
 const (
 	bufBlue = "#0e5df5"
 	bufTeal = "#5fdcff"
+
+	errorRed  = "#cc0000"
+	errorPink = "#ff6666"
 
 	defaultRemote = "buf.build"
 
@@ -53,6 +56,10 @@ var (
 	colorBackground = compat.AdaptiveColor{
 		Light: lipgloss.Color(bufTeal),
 		Dark:  lipgloss.Color(bufBlue),
+	}
+	colorError = compat.AdaptiveColor{
+		Light: lipgloss.Color(errorRed),
+		Dark:  lipgloss.Color(errorPink),
 	}
 	codeStyleLight = styles.Get("modus-operandi")
 	codeStyleDark  = styles.Get("modus-vivendi")
@@ -126,7 +133,7 @@ func run(_ context.Context, args []string) error {
 		help:             help.New(),
 		keys:             keys,
 		currentReference: parsedReference,
-		navigateInput:    newNavigateInput(false),
+		navigateInput:    newNavigateInput(),
 		remote:           remote,
 		fileViewport:     viewport.New(),
 
@@ -626,10 +633,19 @@ func (m model) View() tea.View {
 		view += "\n\n" + m.help.View(m)
 	case modelStateNavigating:
 		header := "Navigate to owner or reference (e.g., owner/module or owner/module:ref)"
-		view = header + "\n\n" + m.navigateInput.View()
+		borderColor := colorForeground
+		var errView string
 		if m.navigateInput.Err != nil {
-			view += "\n\n" + fmt.Sprintf("err: %s", m.navigateInput.Err)
+			borderColor = colorError
+			errView = "\n\n" + lipgloss.NewStyle().
+				Foreground(colorError).
+				Render(m.navigateInput.Err.Error())
 		}
+		inputView := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(borderColor).
+			Render(m.navigateInput.View())
+		view = header + "\n\n" + inputView + errView
 	default:
 		return tea.NewView(fmt.Sprintf("unaccounted state: %v", m.state))
 	}
@@ -862,7 +878,7 @@ func (m model) FullHelp() [][]key.Binding {
 	}
 }
 
-func newNavigateInput(isDark bool) textinput.Model {
+func newNavigateInput() textinput.Model {
 	input := textinput.New()
 	input.Validate = func(inputStr string) error {
 		// Try to parse as a reference first
@@ -874,14 +890,6 @@ func newNavigateInput(isDark bool) textinput.Model {
 			Value: &ownerv1.OwnerRef_Name{Name: inputStr},
 		})
 	}
-	// Style the input.
-	styles := textinput.DefaultStyles(isDark)
-	style := lipgloss.NewStyle().Foreground(colorForeground).Background(colorBackground)
-	styles.Focused.Placeholder = style
-	styles.Focused.Prompt = style
-	styles.Focused.Text = style
-	input.SetStyles(styles)
-
 	input.Focus()
 	input.Placeholder = "bufbuild/registry:main"
 	return input

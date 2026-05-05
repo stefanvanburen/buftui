@@ -214,7 +214,7 @@ func newTestModel(c *client) model {
 		help:             help.New(),
 		keys:             keys,
 		currentReference: nil,
-		navigateInput:    newNavigateInput(false),
+		navigateInput:    newNavigateInput(),
 		remote:           "buf.build",
 		fileViewport:     viewport.New(),
 
@@ -241,7 +241,6 @@ func TestInitialNavigatingState(t *testing.T) {
 // module path. Full UI/interaction tests can be added when teatest v2 is released
 // for charm.land. For now, we test commands and rendering independently.
 // See: https://charm.land/blog/v2/
-
 
 // TestListModulesCommand tests the listModules client command.
 func TestListModulesCommand(t *testing.T) {
