@@ -267,10 +267,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = modelStateLoadingCommitFileContents
 			return m, m.client.getCommitContent(m.currentCommitID)
 		case *modulev1.Resource_Label:
-			// TODO: Is this possible? I guess so?
-			// We don't handle it right now, though.
-			m.err = fmt.Errorf("cannot handle type resource of type %T", retrievedResource)
-			return m, tea.Quit
+			m.currentOwner = msg.requestedResource.Owner
+			m.currentModule = msg.requestedResource.Module
+			m.currentCommitID = retrievedResource.Label.CommitId
+			m.state = modelStateLoadingCommitFileContents
+			return m, m.client.getCommitContent(m.currentCommitID)
 		default:
 			m.err = fmt.Errorf("cannot handle type resource of type %T", retrievedResource)
 			return m, tea.Quit
