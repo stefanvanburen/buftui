@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -181,7 +182,9 @@ type model struct {
 	currentModule      string
 	currentCommitID    string
 	currentModules     modulesMsg
-	currentCommits     commitsMsg
+	currentCommits       []*modulev1.Commit
+	nextCommitsPageToken string
+	loadingMoreCommits   bool
 	currentCommitFiles []*modulev1.File
 	currentReference   *modulev1.ResourceRef_Name
 
@@ -309,13 +312,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case commitsMsg:
 		m.state = modelStateBrowsingCommits
-		m.currentCommits = msg
+		m.currentCommits = msg.commits
+		m.nextCommitsPageToken = msg.nextPageToken
+		m.loadingMoreCommits = false
 		if len(m.currentCommits) == 0 {
 			return m, nil
 		}
 		commits := make([]list.Item, len(m.currentCommits))
-		for i, currentCommit := range m.currentCommits {
-			commits[i] = &commit{underlying: currentCommit, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule}
+		for i, currentCommit := range m.currentCommits {			commits[i] = &commit{underlying: currentCommit, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule}
 		}
 		m.commitList.SetItems(commits)
 		moduleURL := "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule
@@ -329,6 +333,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return []key.Binding{keys.Left, keys.Right}
 		}
 		return m, nil
+
+	case moreCommitsMsg:
+		m.nextCommitsPageToken = msg.nextPageToken
+		m.loadingMoreCommits = false
+		m.currentCommits = append(m.currentCommits, msg.commits...)
+		existingItems := m.commitList.Items()
+		newItems := make([]list.Item, len(msg.commits))
+		for i, c := range msg.commits {
+			newItems[i] = &commit{underlying: c, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule}
+		}
+		return m, m.commitList.SetItems(slices.Concat(existingItems, newItems))
 
 	case contentsMsg:
 		m.state = modelStateBrowsingCommitContents
@@ -574,6 +589,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.moduleList, cmd = m.moduleList.Update(msg)
 	case modelStateBrowsingCommits:
 		m.commitList, cmd = m.commitList.Update(msg)
+		if !m.loadingMoreCommits &&
+			m.nextCommitsPageToken != "" &&
+			m.commitList.Paginator.OnLastPage() {
+			m.loadingMoreCommits = true
+			cmd = tea.Batch(cmd, m.client.listMoreCommits(m.currentOwner, m.currentModule, m.nextCommitsPageToken))
+		}
 	case modelStateBrowsingCommitContents:
 		m.commitFilesList, cmd = m.commitFilesList.Update(msg)
 		item := m.commitFilesList.SelectedItem()

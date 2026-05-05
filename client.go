@@ -11,6 +11,8 @@ import (
 	"connectrpc.com/connect"
 )
 
+const pageSize = 250
+
 type client struct {
 	moduleServiceClient   modulev1connect.ModuleServiceClient
 	commitServiceClient   modulev1connect.CommitServiceClient
@@ -37,30 +39,45 @@ type modulesMsg []*modulev1.Module
 
 func (c *client) listModules(currentOwner string) tea.Cmd {
 	return func() tea.Msg {
-		request := connect.NewRequest(&modulev1.ListModulesRequest{
-			PageSize: 50,
-			OwnerRefs: []*ownerv1.OwnerRef{
-				{
-					Value: &ownerv1.OwnerRef_Name{
-						Name: currentOwner,
+		var allModules []*modulev1.Module
+		pageToken := ""
+		for {
+			request := connect.NewRequest(&modulev1.ListModulesRequest{
+				PageSize:  pageSize,
+				PageToken: pageToken,
+				OwnerRefs: []*ownerv1.OwnerRef{
+					{
+						Value: &ownerv1.OwnerRef_Name{
+							Name: currentOwner,
+						},
 					},
 				},
-			},
-		})
-		response, err := c.moduleServiceClient.ListModules(context.Background(), request)
-		if err != nil {
-			return errMsg{fmt.Errorf("listing modules: %w", err)}
+			})
+			response, err := c.moduleServiceClient.ListModules(context.Background(), request)
+			if err != nil {
+				return errMsg{fmt.Errorf("listing modules: %w", err)}
+			}
+			allModules = append(allModules, response.Msg.Modules...)
+			if response.Msg.NextPageToken == "" {
+				break
+			}
+			pageToken = response.Msg.NextPageToken
 		}
-		return modulesMsg(response.Msg.Modules)
+		return modulesMsg(allModules)
 	}
 }
 
-type commitsMsg []*modulev1.Commit
+type commitsMsg struct {
+	commits       []*modulev1.Commit
+	nextPageToken string
+}
+
+type moreCommitsMsg commitsMsg
 
 func (c *client) listCommits(currentOwner, currentModule string) tea.Cmd {
 	return func() tea.Msg {
 		request := connect.NewRequest(&modulev1.ListCommitsRequest{
-			PageSize: 50,
+			PageSize: pageSize,
 			ResourceRef: &modulev1.ResourceRef{
 				Value: &modulev1.ResourceRef_Name_{
 					Name: &modulev1.ResourceRef_Name{
@@ -74,7 +91,35 @@ func (c *client) listCommits(currentOwner, currentModule string) tea.Cmd {
 		if err != nil {
 			return errMsg{fmt.Errorf("getting commits: %w", err)}
 		}
-		return commitsMsg(response.Msg.Commits)
+		return commitsMsg{
+			commits:       response.Msg.Commits,
+			nextPageToken: response.Msg.NextPageToken,
+		}
+	}
+}
+
+func (c *client) listMoreCommits(currentOwner, currentModule, pageToken string) tea.Cmd {
+	return func() tea.Msg {
+		request := connect.NewRequest(&modulev1.ListCommitsRequest{
+			PageSize:  pageSize,
+			PageToken: pageToken,
+			ResourceRef: &modulev1.ResourceRef{
+				Value: &modulev1.ResourceRef_Name_{
+					Name: &modulev1.ResourceRef_Name{
+						Owner:  currentOwner,
+						Module: currentModule,
+					},
+				},
+			},
+		})
+		response, err := c.commitServiceClient.ListCommits(context.Background(), request)
+		if err != nil {
+			return errMsg{fmt.Errorf("getting more commits: %w", err)}
+		}
+		return moreCommitsMsg{
+			commits:       response.Msg.Commits,
+			nextPageToken: response.Msg.NextPageToken,
+		}
 	}
 }
 

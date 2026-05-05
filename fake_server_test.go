@@ -281,8 +281,8 @@ func TestListCommitsCommand(t *testing.T) {
 	// Should return a commitsMsg
 	commits, ok := msg.(commitsMsg)
 	attest.True(t, ok, attest.Sprintf("expected commitsMsg, got %T", msg))
-	attest.True(t, len(commits) > 0, attest.Sprintf("expected commits, got %d", len(commits)))
-	attest.Equal(t, commits[0].Id, "abc123def456")
+	attest.True(t, len(commits.commits) > 0, attest.Sprintf("expected commits, got %d", len(commits.commits)))
+	attest.Equal(t, commits.commits[0].Id, "abc123def456")
 }
 
 // TestGetCommitContentCommand tests the getCommitContent client command.
