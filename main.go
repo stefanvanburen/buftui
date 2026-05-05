@@ -455,6 +455,48 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.commitList.ResetSelected()
 				return m, m.client.listModules(m.currentOwner)
 			}
+		case key.Matches(msg, m.keys.Yank):
+			var text string
+			var statusList *list.Model
+			switch m.state {
+			case modelStateBrowsingModules:
+				module, ok := m.moduleList.SelectedItem().(*module)
+				if !ok {
+					m.err = fmt.Errorf("invalid list item type: expected module")
+					return m, tea.Quit
+				}
+				text = m.buildBrowserURL("module", module.underlying.Name)
+				statusList = &m.moduleList
+			case modelStateBrowsingCommits:
+				commit, ok := m.commitList.SelectedItem().(*commit)
+				if !ok {
+					m.err = fmt.Errorf("invalid list item type: expected commit")
+					return m, tea.Quit
+				}
+				text = m.buildBrowserURL("tree", commit.underlying.Id)
+				statusList = &m.commitList
+			case modelStateBrowsingCommitContents, modelStateBrowsingCommitFileContents:
+				commitFile, ok := m.commitFilesList.SelectedItem().(*commitFile)
+				if !ok {
+					m.err = fmt.Errorf("invalid list item type: expected commitFile")
+					return m, tea.Quit
+				}
+				if m.state == modelStateBrowsingCommitFileContents {
+					// Copy file content when in the file viewer.
+					text = string(commitFile.underlying.Content)
+				} else {
+					text = m.buildBrowserURL("file", commitFile.underlying.Path)
+				}
+				statusList = &m.commitFilesList
+			}
+			if text != "" && statusList != nil {
+				text = strings.TrimPrefix(text, "https://")
+				return m, tea.Batch(
+					tea.SetClipboard(text),
+					statusList.NewStatusMessage("copied!"),
+				)
+			}
+
 		case key.Matches(msg, m.keys.Browse):
 			var url string
 			var list list.Model
@@ -698,15 +740,16 @@ func parseReference(reference string) (remote string, resourceRef *modulev1.Reso
 // keyMap defines a set of keybindings. To work for help it must satisfy
 // key.Map. It could also very easily be a map[string]key.Binding.
 type keyMap struct {
-	Up   key.Binding
-	Down key.Binding
-	Left key.Binding
-	Right key.Binding
+	Up       key.Binding
+	Down     key.Binding
+	Left     key.Binding
+	Right    key.Binding
 	Navigate key.Binding
-	Enter key.Binding
-	Help key.Binding
-	Quit key.Binding
-	Browse key.Binding
+	Enter    key.Binding
+	Help     key.Binding
+	Quit     key.Binding
+	Browse   key.Binding
+	Yank     key.Binding
 }
 
 var keys = keyMap{
@@ -748,6 +791,10 @@ var keys = keyMap{
 		key.WithKeys("o"),
 		key.WithHelp("o", "open in browser"),
 	),
+	Yank: key.NewBinding(
+		key.WithKeys("y"),
+		key.WithHelp("y", "copy URL"),
+	),
 }
 
 func (m model) ShortHelp() []key.Binding {
@@ -755,20 +802,20 @@ func (m model) ShortHelp() []key.Binding {
 	switch m.state {
 	case modelStateBrowsingModules:
 		// Can't go Left while browsing modules; already at the "top".
-		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Browse}
+		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Browse, keys.Yank}
 		if len(m.currentModules) != 0 {
 			// Can only go right when modules exist.
 			shortHelp = append(shortHelp, keys.Right)
 		}
 	case modelStateBrowsingCommits, modelStateBrowsingCommitContents:
-		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left}
+		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left, keys.Yank}
 		if len(m.currentCommits) != 0 {
 			// Can only go right when commits exist.
 			shortHelp = append(shortHelp, keys.Right)
 		}
 	case modelStateBrowsingCommitFileContents:
 		// Can't go Right while browsing file contents; already at the "bottom".
-		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left}
+		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left, keys.Yank}
 	case modelStateNavigating:
 		shortHelp = []key.Binding{keys.Enter}
 	default:
