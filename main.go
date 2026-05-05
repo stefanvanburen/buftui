@@ -17,6 +17,7 @@ import (
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
+	"charm.land/glamour/v2"
 	"github.com/bufbuild/httplb"
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
@@ -38,6 +39,10 @@ const (
 	bufTeal = "#5fdcff"
 
 	defaultRemote = "buf.build"
+
+	// chromaFormatter is the chroma formatter name used for syntax highlighting.
+	// This corresponds to [formatters.TTY256].
+	chromaFormatter = "terminal256"
 )
 
 var (
@@ -662,13 +667,16 @@ func getTokenFromNetrc(remote string) (string, error) {
 	return token, nil
 }
 
-func highlightFile(filename, fileContents string, isDark bool) (string, error) {
+func highlightFile(filename, fileContents string, isDark bool, width int) (string, error) {
 	// There are only a few filetypes that can actually exist in a module:
 	// - LICENSE
 	// - Documentation files (markdown)
 	// - protobuf
 	// Ref: https://buf.build/bufbuild/registry/docs/main:buf.registry.module.v1#buf.registry.module.v1.FileType
 	// Fallback is for LICENSE files.
+	if lexers.Match(filename) == lexers.Get("markdown") {
+		return renderMarkdown(fileContents, isDark, width)
+	}
 	lexer := cmp.Or(lexers.Match(filename), lexers.Fallback)
 	// TODO: Make this configurable?
 	style := codeStyleLight
@@ -679,7 +687,7 @@ func highlightFile(filename, fileContents string, isDark bool) (string, error) {
 	// to select a different one based on terminal type.
 	// I think we should be able to figure that out from
 	// tea/termenv, somehow.
-	formatter := cmp.Or(formatters.TTY256, formatters.Fallback)
+	formatter := cmp.Or(formatters.Get(chromaFormatter), formatters.Fallback)
 	iterator, err := lexer.Tokenise(nil, fileContents)
 	if err != nil {
 		return "", fmt.Errorf("tokenizing file: %w", err)
@@ -689,6 +697,26 @@ func highlightFile(filename, fileContents string, isDark bool) (string, error) {
 		return "", fmt.Errorf("formatting file: %w", err)
 	}
 	return buffer.String(), nil
+}
+
+func renderMarkdown(content string, isDark bool, width int) (string, error) {
+	style := glamour.WithStandardStyle("light")
+	if isDark {
+		style = glamour.WithStandardStyle("dark")
+	}
+	r, err := glamour.NewTermRenderer(
+		style,
+		glamour.WithWordWrap(width),
+		glamour.WithChromaFormatter(chromaFormatter),
+	)
+	if err != nil {
+		return "", fmt.Errorf("creating markdown renderer: %w", err)
+	}
+	output, err := r.Render(content)
+	if err != nil {
+		return "", fmt.Errorf("rendering markdown: %w", err)
+	}
+	return output, nil
 }
 
 func parseReference(reference string) (remote string, resourceRef *modulev1.ResourceRef_Name, err error) {
@@ -860,7 +888,7 @@ func newNavigateInput(isDark bool) textinput.Model {
 
 // updateFileView updates the file viewport with highlighted content for the given file.
 func (m *model) updateFileView(file *modulev1.File) error {
-	highlightedFile, err := highlightFile(file.Path, string(file.Content), m.isDark)
+	highlightedFile, err := highlightFile(file.Path, string(file.Content), m.isDark, m.fileViewport.Width())
 	if err != nil {
 		return fmt.Errorf("highlighting file: %w", err)
 	}
