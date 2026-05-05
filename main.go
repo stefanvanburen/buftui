@@ -213,9 +213,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		{
 			delegate := list.NewDefaultDelegate()
 			delegate.Styles = listItemStyles
-			// TODO: Show module description.
-			delegate.ShowDescription = false
-			delegate.SetSpacing(0)
+			delegate.ShowDescription = true
 			m.moduleList.SetDelegate(delegate)
 		}
 
@@ -870,7 +868,6 @@ func (m *module) Title() string {
 
 // Description implements [list.DefaultItem].
 func (m *module) Description() string {
-	// TODO: Show module description.
 	return m.underlying.Description
 }
 
