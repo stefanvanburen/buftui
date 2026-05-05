@@ -836,6 +836,25 @@ func (m *model) buildBrowserURL(resourceType string, resourcePath string) string
 	return ""
 }
 
+// relativeTime returns a human-readable relative time string for t.
+func relativeTime(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case d < 30*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	case d < 365*24*time.Hour:
+		return fmt.Sprintf("%dmo ago", int(d.Hours()/(24*30)))
+	default:
+		return fmt.Sprintf("%dy ago", int(d.Hours()/(24*365)))
+	}
+}
+
 // renderHyperlink renders text as a terminal hyperlink to url.
 func renderHyperlink(text, url string) string {
 	return lipgloss.NewStyle().Hyperlink(url).Render(text)
@@ -892,8 +911,8 @@ func (m *commit) Title() string {
 
 // Description implements list.DefaultItem.
 func (m *commit) Description() string {
-	// TODO: Support absolute/relative time.
-	return fmt.Sprintf("Create Time: %s", m.underlying.CreateTime.AsTime().Format(time.Stamp))
+	t := m.underlying.CreateTime.AsTime()
+	return fmt.Sprintf("%s (%s)", t.Format(time.Stamp), relativeTime(t))
 }
 
 type commitFile struct {
