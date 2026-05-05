@@ -15,6 +15,7 @@ import (
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 	"go.akshayshah.org/attest"
 	"go.akshayshah.org/memhttp"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -346,5 +347,56 @@ func TestViewDisplay(t *testing.T) {
 				attest.True(t, strings.Contains(viewContent, text), attest.Sprintf("view should contain %q", text))
 			}
 		})
+	}
+}
+
+// TestModuleFilteringNoOSCCodes verifies that filtering the module list shows
+// plain text titles with no OSC escape sequences, and that our keybindings
+// (browse, yank, navigate) are suppressed while the list is filtering.
+func TestModuleFilteringNoOSCCodes(t *testing.T) {
+	t.Parallel()
+
+	c := startFakeServer(t)
+	m := newTestModel(c)
+
+	// Populate the module list and currentModules (both are checked in View).
+	mod1 := &modulev1.Module{Name: "registry"}
+	mod2 := &modulev1.Module{Name: "protovalidate"}
+	m.currentModules = modulesMsg{mod1, mod2}
+	m.moduleList.SetItems([]list.Item{
+		&module{underlying: mod1, remote: "buf.build", owner: "bufbuild"},
+		&module{underlying: mod2, remote: "buf.build", owner: "bufbuild"},
+	})
+	m.state = modelStateBrowsingModules
+
+	// Press "/" to enter filter mode.
+	m2, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+	m = m2.(model)
+	attest.Equal(t, m.moduleList.FilterState(), list.Filtering)
+
+	// Type a filter term one rune at a time.
+	for _, r := range "reg" {
+		m2, _ = m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+		m = m2.(model)
+	}
+
+	// The rendered view must not contain OSC escape sequences (ESC ] 8).
+	view := m.View()
+	attest.False(t, strings.Contains(view.Content, "\x1b]8"), attest.Sprintf(
+		"module list filter view should not contain OSC hyperlink escape codes"))
+
+	// Module names should appear as plain text.
+	attest.True(t, strings.Contains(view.Content, "registry"), attest.Sprintf(
+		"module list filter view should contain plain module name"))
+
+	// Keybindings that would normally trigger actions must not fire while
+	// filtering — they should pass through to the list instead.
+	for _, key := range []string{"o", "y", "g"} {
+		m2, _ = m.Update(tea.KeyPressMsg{Code: rune(key[0]), Text: key})
+		m = m2.(model)
+		// The model must still be in filtering state — not navigating or erroring.
+		attest.Equal(t, m.state, modelStateBrowsingModules)
+		attest.Equal(t, m.moduleList.FilterState(), list.Filtering)
+		attest.Equal(t, m.err, nil)
 	}
 }

@@ -368,9 +368,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
-		switch {
-		case key.Matches(msg, m.keys.Quit):
+		if key.Matches(msg, m.keys.Quit) {
 			return m, tea.Quit
+		}
+		// When a list is actively filtering, pass all keys through to it
+		// rather than handling our own keybindings.
+		if m.activeListIsFiltering() {
+			break
+		}
+		switch {
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
 		case key.Matches(msg, m.keys.Navigate):
@@ -944,6 +950,20 @@ func renderHyperlink(text, url string) string {
 	return lipgloss.NewStyle().Hyperlink(url).Render(text)
 }
 
+// activeListIsFiltering returns true when the list visible in the current state
+// is actively being filtered by the user.
+func (m model) activeListIsFiltering() bool {
+	switch m.state {
+	case modelStateBrowsingModules:
+		return m.moduleList.FilterState() == list.Filtering
+	case modelStateBrowsingCommits:
+		return m.commitList.FilterState() == list.Filtering
+	case modelStateBrowsingCommitContents:
+		return m.commitFilesList.FilterState() == list.Filtering
+	}
+	return false
+}
+
 type module struct {
 	underlying *modulev1.Module
 	remote     string
@@ -965,8 +985,7 @@ func (m *module) Title() string {
 	if m.underlying.State == modulev1.ModuleState_MODULE_STATE_DEPRECATED {
 		title += " (Deprecated)"
 	}
-	url := "https://" + m.remote + "/" + m.owner + "/" + m.underlying.Name
-	return renderHyperlink(title, url)
+	return title
 }
 
 // Description implements [list.DefaultItem].
@@ -989,8 +1008,7 @@ func (m *commit) FilterValue() string {
 
 // Title implements list.DefaultItem.
 func (m *commit) Title() string {
-	url := "https://" + m.remote + "/" + m.owner + "/" + m.moduleName + "/commits/" + m.underlying.Id
-	return renderHyperlink(m.underlying.Id, url)
+	return m.underlying.Id
 }
 
 // Description implements list.DefaultItem.
@@ -1014,8 +1032,7 @@ func (m *commitFile) FilterValue() string {
 
 // Title implements list.DefaultItem.
 func (m *commitFile) Title() string {
-	url := "https://" + m.remote + "/" + m.owner + "/" + m.moduleName + "/file/" + m.commitID + ":" + m.underlying.Path
-	return renderHyperlink(m.underlying.Path, url)
+	return m.underlying.Path
 }
 
 // Description implements list.DefaultItem.
