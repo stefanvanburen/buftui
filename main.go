@@ -197,6 +197,9 @@ type model struct {
 	navigateInput   textinput.Model
 	help            help.Model
 
+	// Navigate input suggestions state
+	currentSuggestionsKey string
+
 	isDark bool
 }
 
@@ -214,7 +217,7 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.BackgroundColorMsg:
-		m.isDark = msg.IsDark()
+		m.help.Styles = help.DefaultStyles(msg.IsDark())
 
 		listStyles := list.DefaultStyles(msg.IsDark())
 		listStyles.Title = listStyles.Title.Foreground(colorForeground).Background(colorBackground).Bold(true)
@@ -379,6 +382,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case navigateSuggestionsMsg:
+		m.navigateInput.SetSuggestions([]string(msg))
+		return m, nil
+
 	case errMsg:
 		m.err = msg.err
 		return m, nil
@@ -425,6 +432,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.previousState = m.state
 				m.state = modelStateNavigating
 				m.navigateInput.Reset()
+				m.navigateInput.SetSuggestions(nil)
+				m.currentSuggestionsKey = ""
 				return m, nil
 			}
 		case key.Matches(msg, m.keys.Enter):
@@ -637,6 +646,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fileViewport, cmd = m.fileViewport.Update(msg)
 	case modelStateNavigating:
 		m.navigateInput, cmd = m.navigateInput.Update(msg)
+		inputValue := m.navigateInput.Value()
+		if strings.Contains(inputValue, ":") {
+			if key := labelSuggestionsModule(inputValue); key != "" && key != m.currentSuggestionsKey {
+				m.currentSuggestionsKey = key
+				owner, module, _ := strings.Cut(key, "/")
+				cmd = tea.Batch(cmd, m.client.fetchLabelSuggestions(owner, module))
+			}
+		} else {
+			if key := suggestionsOwner(inputValue); key != "" && key != m.currentSuggestionsKey {
+				m.currentSuggestionsKey = key
+				cmd = tea.Batch(cmd, m.client.fetchModuleSuggestions(key))
+			}
+		}
 	}
 	return m, cmd
 }
@@ -696,7 +718,7 @@ func (m model) View() tea.View {
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(borderColor).
 			Render(m.navigateInput.View())
-		view = header + "\n\n" + inputView + errView
+		view = header + "\n\n" + inputView + errView + "\n\n" + m.help.View(m)
 	default:
 		return tea.NewView(fmt.Sprintf("unaccounted state: %v", m.state))
 	}
@@ -706,6 +728,8 @@ func (m model) View() tea.View {
 }
 
 type errMsg struct{ err error }
+
+type navigateSuggestionsMsg []string
 
 // For messages that contain errors it's often handy to also implement the
 // error interface on the message.
@@ -785,6 +809,59 @@ func renderMarkdown(content string, isDark bool, width int) (string, error) {
 		return "", fmt.Errorf("rendering markdown: %w", err)
 	}
 	return output, nil
+}
+
+// suggestionsOwner returns the owner name to fetch module suggestions for
+// given the current navigate input value. Returns an empty string if the
+// owner cannot yet be determined from the input.
+// labelSuggestionsModule returns "owner/module" when the input contains a
+// colon and we should fetch label suggestions for that module. Returns an
+// empty string if the module cannot yet be determined.
+func labelSuggestionsModule(input string) string {
+	moduleRef, _, ok := strings.Cut(input, ":")
+	if !ok {
+		return ""
+	}
+	slashCount := strings.Count(moduleRef, "/")
+	if slashCount == 0 {
+		return ""
+	}
+	parts := strings.SplitN(moduleRef, "/", 3)
+	if slashCount == 1 {
+		// "owner/module:..." — if the first segment looks like a remote, we
+		// need another slash before we can determine the module.
+		if strings.Contains(parts[0], ".") {
+			return ""
+		}
+		return moduleRef
+	}
+	// "remote/owner/module:..." — if the first segment looks like a remote,
+	// the module ref is the second and third segments.
+	if strings.Contains(parts[0], ".") {
+		return parts[1] + "/" + parts[2]
+	}
+	return parts[0] + "/" + parts[1]
+}
+
+func suggestionsOwner(input string) string {
+	slashCount := strings.Count(input, "/")
+	if slashCount == 0 {
+		return ""
+	}
+	parts := strings.SplitN(input, "/", 3)
+	if slashCount == 1 {
+		// "owner/..." — if the first segment looks like a remote (has a dot),
+		// we need another slash before we can determine the owner.
+		if strings.Contains(parts[0], ".") {
+			return ""
+		}
+		return parts[0]
+	}
+	// "a/b/..." — if a looks like a remote, b is the owner.
+	if strings.Contains(parts[0], ".") {
+		return parts[1]
+	}
+	return parts[0]
 }
 
 func parseReference(reference string) (remote string, resourceRef *modulev1.ResourceRef_Name, err error) {
@@ -918,7 +995,13 @@ func (m model) ShortHelp() []key.Binding {
 		// Can't go Right while browsing file contents; already at the "bottom".
 		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Back, keys.Yank}
 	case modelStateNavigating:
-		shortHelp = []key.Binding{keys.Enter}
+		shortHelp = []key.Binding{keys.Enter, keys.Back}
+		if len(m.navigateInput.AvailableSuggestions()) > 0 {
+			shortHelp = append(shortHelp,
+				key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "accept")),
+				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "cycle suggestions")),
+			)
+		}
 	default:
 		// In the other states, just show Help and Quit.
 		return []key.Binding{keys.Help, keys.Quit}
@@ -937,15 +1020,21 @@ func (m model) FullHelp() [][]key.Binding {
 func newNavigateInput() textinput.Model {
 	input := textinput.New()
 	input.Validate = func(inputStr string) error {
-		// Try to parse as a reference first
+		// Try to parse as a complete reference first.
 		if _, _, err := parseReference(inputStr); err == nil {
 			return nil
 		}
-		// Fall back to validating as an owner name
+		// A slash indicates a partial reference being typed (e.g. "owner/"
+		// or "owner/partialmodule"); don't show an error for intermediate states.
+		if strings.Contains(inputStr, "/") {
+			return nil
+		}
+		// Fall back to validating as an owner name.
 		return protovalidate.Validate(&ownerv1.OwnerRef{
 			Value: &ownerv1.OwnerRef_Name{Name: inputStr},
 		})
 	}
+	input.ShowSuggestions = true
 	input.Focus()
 	input.Placeholder = "bufbuild/registry:main"
 	return input

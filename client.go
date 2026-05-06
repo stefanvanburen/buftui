@@ -18,6 +18,7 @@ type client struct {
 	commitServiceClient   modulev1connect.CommitServiceClient
 	downloadServiceClient modulev1connect.DownloadServiceClient
 	resourceServiceClient modulev1connect.ResourceServiceClient
+	labelServiceClient    modulev1connect.LabelServiceClient
 }
 
 func newClient(httpClient connect.HTTPClient, remote, token string) *client {
@@ -32,6 +33,7 @@ func newClient(httpClient connect.HTTPClient, remote, token string) *client {
 		commitServiceClient:   modulev1connect.NewCommitServiceClient(httpClient, address, options),
 		downloadServiceClient: modulev1connect.NewDownloadServiceClient(httpClient, address, options),
 		resourceServiceClient: modulev1connect.NewResourceServiceClient(httpClient, address, options),
+		labelServiceClient:    modulev1connect.NewLabelServiceClient(httpClient, address, options),
 	}
 }
 
@@ -181,6 +183,53 @@ func (c *client) getResource(resourceName *modulev1.ResourceRef_Name) tea.Cmd {
 	}
 }
 
+func (c *client) fetchLabelSuggestions(owner, module string) tea.Cmd {
+	return func() tea.Msg {
+		request := connect.NewRequest(&modulev1.ListLabelsRequest{
+			PageSize: pageSize,
+			ResourceRef: &modulev1.ResourceRef{
+				Value: &modulev1.ResourceRef_Name_{
+					Name: &modulev1.ResourceRef_Name{
+						Owner:  owner,
+						Module: module,
+					},
+				},
+			},
+			ArchiveFilter: modulev1.ListLabelsRequest_ARCHIVE_FILTER_UNARCHIVED_ONLY,
+		})
+		response, err := c.labelServiceClient.ListLabels(context.Background(), request)
+		if err != nil {
+			// Suggestions are best-effort; ignore errors.
+			return navigateSuggestionsMsg(nil)
+		}
+		suggestions := make([]string, len(response.Msg.Labels))
+		for i, label := range response.Msg.Labels {
+			suggestions[i] = owner + "/" + module + ":" + label.Name
+		}
+		return navigateSuggestionsMsg(suggestions)
+	}
+}
+
+func (c *client) fetchModuleSuggestions(owner string) tea.Cmd {
+	return func() tea.Msg {
+		request := connect.NewRequest(&modulev1.ListModulesRequest{
+			PageSize: pageSize,
+			OwnerRefs: []*ownerv1.OwnerRef{{
+				Value: &ownerv1.OwnerRef_Name{Name: owner},
+			}},
+		})
+		response, err := c.moduleServiceClient.ListModules(context.Background(), request)
+		if err != nil {
+			// Suggestions are best-effort; ignore errors.
+			return navigateSuggestionsMsg(nil)
+		}
+		suggestions := make([]string, len(response.Msg.Modules))
+		for i, mod := range response.Msg.Modules {
+			suggestions[i] = owner + "/" + mod.Name
+		}
+		return navigateSuggestionsMsg(suggestions)
+	}
+}
 // newAuthInterceptor creates a client-only interceptor for adding authentication to requests.
 func newAuthInterceptor(token string) connect.UnaryInterceptorFunc {
 	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {

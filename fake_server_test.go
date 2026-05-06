@@ -314,6 +314,11 @@ func TestViewDisplay(t *testing.T) {
 		contains []string
 	}{
 		{
+			name:     "navigating state shows help",
+			setup:    func(m *model) { m.state = modelStateNavigating },
+			contains: []string{"Navigate to owner", "enter", "esc"},
+		},
+		{
 			name:     "navigating state",
 			setup:    func(m *model) { m.state = modelStateNavigating },
 			contains: []string{"Navigate to owner"},
