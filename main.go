@@ -173,7 +173,8 @@ type model struct {
 	remote         string
 
 	// State - where are we?
-	state modelState
+	state         modelState
+	previousState modelState
 	// Should exit when setting this.
 	err error
 
@@ -394,11 +395,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
+		case key.Matches(msg, m.keys.Back):
+			switch m.state {
+			case modelStateNavigating:
+				m.state = m.previousState
+				return m, nil
+			case modelStateBrowsingModules:
+				if m.moduleList.FilterState() != list.Unfiltered {
+					m.moduleList.ResetFilter()
+					return m, nil
+				}
+				return m, tea.Quit
+			case modelStateBrowsingCommits:
+				m.state = modelStateLoadingModules
+				m.commitList.ResetSelected()
+				return m, m.client.listModules(m.currentOwner)
+			case modelStateBrowsingCommitContents:
+				m.state = modelStateLoadingCommits
+				m.commitFilesList.ResetSelected()
+				return m, m.client.listCommits(m.currentOwner, m.currentModule)
+			case modelStateBrowsingCommitFileContents:
+				m.state = modelStateBrowsingCommitContents
+				return m, nil
+			}
 		case key.Matches(msg, m.keys.Navigate):
 			// From anywhere other than the navigate state, "g"
 			// enters a navigate state.
 			if m.state != modelStateNavigating {
-				// "g" -> "navigate"
+				m.previousState = m.state
 				m.state = modelStateNavigating
 				m.navigateInput.Reset()
 				return m, nil
@@ -816,6 +840,7 @@ type keyMap struct {
 	Down     key.Binding
 	Left     key.Binding
 	Right    key.Binding
+	Back     key.Binding
 	Navigate key.Binding
 	Enter    key.Binding
 	Help     key.Binding
@@ -843,6 +868,10 @@ var keys = keyMap{
 		key.WithKeys("right", "l"),
 		key.WithHelp("→/l", "go in"),
 	),
+	Back: key.NewBinding(
+		key.WithKeys("esc"),
+		key.WithHelp("esc", "back / quit"),
+	),
 	Enter: key.NewBinding(
 		key.WithKeys("enter"),
 		key.WithHelp("enter", "navigate"),
@@ -856,8 +885,8 @@ var keys = keyMap{
 		key.WithHelp("?", "toggle help"),
 	),
 	Quit: key.NewBinding(
-		key.WithKeys("esc", "ctrl+c"),
-		key.WithHelp("esc", "quit"),
+		key.WithKeys("ctrl+c"),
+		key.WithHelp("ctrl+c", "quit"),
 	),
 	Browse: key.NewBinding(
 		key.WithKeys("o"),
@@ -880,14 +909,14 @@ func (m model) ShortHelp() []key.Binding {
 			shortHelp = append(shortHelp, keys.Right)
 		}
 	case modelStateBrowsingCommits, modelStateBrowsingCommitContents:
-		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left, keys.Yank}
+		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Back, keys.Yank}
 		if len(m.currentCommits) != 0 {
 			// Can only go right when commits exist.
 			shortHelp = append(shortHelp, keys.Right)
 		}
 	case modelStateBrowsingCommitFileContents:
 		// Can't go Right while browsing file contents; already at the "bottom".
-		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Left, keys.Yank}
+		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Back, keys.Yank}
 	case modelStateNavigating:
 		shortHelp = []key.Binding{keys.Enter}
 	default:
@@ -901,7 +930,7 @@ func (m model) ShortHelp() []key.Binding {
 func (m model) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		m.ShortHelp(),
-		{keys.Navigate, keys.Help, keys.Quit},
+		{keys.Left, keys.Navigate, keys.Help, keys.Quit},
 	}
 }
 
