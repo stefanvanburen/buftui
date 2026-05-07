@@ -120,12 +120,15 @@ func run(_ context.Context, args []string) error {
 	delegate := list.NewDefaultDelegate()
 	moduleList := list.New(nil, delegate, 20, 20)
 	moduleList.SetShowHelp(false)
+	moduleList.SetStatusBarItemName("module", "modules")
 
 	commitList := list.New(nil, delegate, 20, 20)
 	commitList.SetShowHelp(false)
+	commitList.SetStatusBarItemName("commit", "commits")
 
 	commitFilesList := list.New(nil, delegate, 20, 20)
 	commitFilesList.SetShowHelp(false)
+	commitFilesList.SetStatusBarItemName("file", "files")
 
 	model := model{
 		state:            initialState,
@@ -219,7 +222,7 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.BackgroundColorMsg:
-		m.help.Styles = help.DefaultStyles(msg.IsDark())
+		m.help.Styles = helpStyles(msg.IsDark())
 
 		listStyles := list.DefaultStyles(msg.IsDark())
 		listStyles.Title = listStyles.Title.Foreground(colorForeground).Background(colorBackground).Bold(true)
@@ -306,7 +309,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.moduleList.SetItems(modules)
 		ownerURL := "https://" + m.remote + "/" + m.currentOwner
-		m.moduleList.Title = "Modules (Owner: " + renderHyperlink(m.currentOwner, ownerURL) + ")"
+		m.moduleList.Title = breadcrumb(
+			m.remote, "https://"+m.remote,
+			m.currentOwner, ownerURL,
+		)
 		m.moduleList.Styles = m.listStyles
 		m.moduleList.InfiniteScrolling = false
 		m.moduleList.AdditionalFullHelpKeys = func() []key.Binding {
@@ -330,7 +336,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.commitList.SetItems(commits)
 		moduleURL := "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule
-		m.commitList.Title = "Commits (Module: " + renderHyperlink(m.currentOwner+"/"+m.currentModule, moduleURL) + ")"
+		m.commitList.Title = breadcrumb(
+			m.remote, "https://"+m.remote,
+			m.currentOwner, "https://"+m.remote+"/"+m.currentOwner,
+			m.currentModule, moduleURL,
+		)
 		m.commitList.Styles = m.listStyles
 		m.commitList.InfiniteScrolling = false
 		m.commitList.AdditionalFullHelpKeys = func() []key.Binding {
@@ -362,8 +372,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commitFilesList.SetItems(commitFiles)
 		{
 			commitURL := "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule + "/commits/" + m.currentCommitID
-			moduleURL := "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule
-			m.commitFilesList.Title = "Commit " + renderHyperlink(m.currentCommitID, commitURL) + " (Module: " + renderHyperlink(m.currentOwner+"/"+m.currentModule, moduleURL) + ")"
+			m.commitFilesList.Title = breadcrumb(
+				m.remote, "https://"+m.remote,
+				m.currentOwner, "https://"+m.remote+"/"+m.currentOwner,
+				m.currentModule, "https://"+m.remote+"/"+m.currentOwner+"/"+m.currentModule,
+				m.currentCommitID[:12], commitURL,
+			)
 		}
 		m.commitFilesList.Styles = m.listStyles
 		m.commitFilesList.InfiniteScrolling = false
@@ -1113,6 +1127,39 @@ func relativeTime(t time.Time) string {
 // renderHyperlink renders text as a terminal hyperlink to url.
 func renderHyperlink(text, url string) string {
 	return lipgloss.NewStyle().Hyperlink(url).Render(text)
+}
+
+// breadcrumb renders a › -separated sequence of hyperlinked segments.
+// Each pair of (text, url) arguments produces one linked segment.
+func breadcrumb(pairs ...string) string {
+	if len(pairs)%2 != 0 {
+		panic("breadcrumb requires an even number of arguments (text, url pairs)")
+	}
+	parts := make([]string, len(pairs)/2)
+	for i := range parts {
+		parts[i] = renderHyperlink(pairs[i*2], pairs[i*2+1])
+	}
+	return strings.Join(parts, " › ")
+}
+
+// helpStyles returns well-contrasted help bar styles for the given background.
+// The default bubbles styles have near-invisible colors in both light and dark
+// modes, so we override them using our brand colors for key names and readable
+// grays for descriptions and separators.
+func helpStyles(isDark bool) help.Styles {
+	lightDark := lipgloss.LightDark(isDark)
+	keyStyle := lipgloss.NewStyle().Foreground(lightDark(lipgloss.Color(bufBlue), lipgloss.Color(bufTeal)))
+	descStyle := lipgloss.NewStyle().Foreground(lightDark(lipgloss.Color("#555555"), lipgloss.Color("#aaaaaa")))
+	sepStyle := lipgloss.NewStyle().Foreground(lightDark(lipgloss.Color("#aaaaaa"), lipgloss.Color("#555555")))
+	return help.Styles{
+		ShortKey:       keyStyle,
+		ShortDesc:      descStyle,
+		ShortSeparator: sepStyle,
+		Ellipsis:       sepStyle,
+		FullKey:        keyStyle,
+		FullDesc:       descStyle,
+		FullSeparator:  sepStyle,
+	}
 }
 
 // activeListIsFiltering returns true when the list visible in the current state
