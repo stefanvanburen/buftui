@@ -10,10 +10,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
-	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
 	"buf.build/go/protovalidate"
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
@@ -24,10 +22,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
-	"charm.land/lipgloss/v2/compat"
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
-	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/bufbuild/httplb"
 	"github.com/cli/browser"
 	"github.com/jdx/go-netrc"
@@ -36,34 +32,11 @@ import (
 )
 
 const (
-	bufBlue = "#0e5df5"
-	bufTeal = "#5fdcff"
-
-	errorRed  = "#cc0000"
-	errorPink = "#ff6666"
-
 	defaultRemote = "buf.build"
 
 	// chromaFormatter is the chroma formatter name used for syntax highlighting.
 	// This corresponds to [formatters.TTY256].
 	chromaFormatter = "terminal256"
-)
-
-var (
-	colorForeground = compat.AdaptiveColor{
-		Light: lipgloss.Color(bufBlue),
-		Dark:  lipgloss.Color(bufTeal),
-	}
-	colorBackground = compat.AdaptiveColor{
-		Light: lipgloss.Color(bufTeal),
-		Dark:  lipgloss.Color(bufBlue),
-	}
-	colorError = compat.AdaptiveColor{
-		Light: lipgloss.Color(errorRed),
-		Dark:  lipgloss.Color(errorPink),
-	}
-	codeStyleLight = styles.Get("modus-operandi")
-	codeStyleDark  = styles.Get("modus-vivendi")
 )
 
 func main() {
@@ -118,6 +91,7 @@ func run(_ context.Context, args []string) error {
 	}
 
 	delegate := list.NewDefaultDelegate()
+
 	moduleList := list.New(nil, delegate, 20, 20)
 	moduleList.SetShowHelp(false)
 	moduleList.SetStatusBarItemName("module", "modules")
@@ -128,7 +102,13 @@ func run(_ context.Context, args []string) error {
 
 	commitFilesList := list.New(nil, delegate, 20, 20)
 	commitFilesList.SetShowHelp(false)
+	commitFilesList.SetShowTitle(false)
 	commitFilesList.SetStatusBarItemName("file", "files")
+
+	labelsList := list.New(nil, delegate, 20, 20)
+	labelsList.SetShowHelp(false)
+	labelsList.SetShowTitle(false)
+	labelsList.SetStatusBarItemName("label", "labels")
 
 	model := model{
 		state:            initialState,
@@ -144,6 +124,7 @@ func run(_ context.Context, args []string) error {
 		moduleList:      moduleList,
 		commitList:      commitList,
 		commitFilesList: commitFilesList,
+		labelsList:      labelsList,
 	}
 
 	if _, err := tea.NewProgram(model).Run(); err != nil {
@@ -184,20 +165,26 @@ type model struct {
 	navigateErr error
 
 	// State-related data
-	currentOwner       string
-	currentModule      string
-	currentCommitID    string
-	currentModules     modulesMsg
+	currentOwner         string
+	currentModule        string
+	currentCommitID      string
+	currentModules       modulesMsg
 	currentCommits       []*modulev1.Commit
 	nextCommitsPageToken string
 	loadingMoreCommits   bool
-	currentCommitFiles []*modulev1.File
-	currentReference   *modulev1.ResourceRef_Name
+	currentCommitFiles   []*modulev1.File
+	currentReference     *modulev1.ResourceRef_Name
+	currentLabels        []*modulev1.Label
+	loadingLabels        bool
+
+	// Tab state
+	activeCommitTab commitTab
 
 	// Sub-models
 	moduleList      list.Model
 	commitList      list.Model
 	commitFilesList list.Model
+	labelsList      list.Model
 	fileViewport    viewport.Model
 	navigateInput   textinput.Model
 	help            help.Model
@@ -240,13 +227,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			delegate.ShowDescription = true
 			m.moduleList.SetDelegate(delegate)
 		}
-
 		{
 			delegate := list.NewDefaultDelegate()
 			delegate.Styles = listItemStyles
 			m.commitList.SetDelegate(delegate)
 		}
-
 		{
 			delegate := list.NewDefaultDelegate()
 			delegate.Styles = listItemStyles
@@ -254,23 +239,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			delegate.SetSpacing(0)
 			m.commitFilesList.SetDelegate(delegate)
 		}
+		{
+			delegate := list.NewDefaultDelegate()
+			delegate.Styles = listItemStyles
+			m.labelsList.SetDelegate(delegate)
+		}
 
 	case tea.WindowSizeMsg:
-		// If we set a width on the help menu it can gracefully truncate
-		// its view as needed.
 		m.help.SetWidth(msg.Width)
 
-		// TODO: Make these values responsive, based on the number of items received; these
-		// should be the max values.
-		m.moduleList.SetHeight(msg.Height - 5) // Give space for the list title and help message
+		m.moduleList.SetHeight(msg.Height - 5)
 		m.moduleList.SetWidth(msg.Width)
-		m.commitList.SetHeight(msg.Height - 5) // Give space for the list title and help message
+		m.commitList.SetHeight(msg.Height - 5)
 		m.commitList.SetWidth(msg.Width)
-		m.commitFilesList.SetHeight(msg.Height - 5) // Give space for the list title and help message
+		// Commit content views account for the 2-line tab header above them.
+		m.commitFilesList.SetHeight(msg.Height - 7)
 		m.commitFilesList.SetWidth(msg.Width / 2)
-		m.fileViewport.SetHeight(msg.Height)
+		m.fileViewport.SetHeight(msg.Height - 2)
 		m.fileViewport.SetWidth(msg.Width / 2)
-		m.navigateInput.SetWidth(min(msg.Width, 50)) // clamped at 50 characters wide
+		m.labelsList.SetHeight(msg.Height - 7)
+		m.labelsList.SetWidth(msg.Width)
+		m.navigateInput.SetWidth(min(msg.Width, 50))
 
 	case resourceMsg:
 		switch retrievedResource := msg.retrievedResource.Value.(type) {
@@ -328,11 +317,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentCommits = msg.commits
 		m.nextCommitsPageToken = msg.nextPageToken
 		m.loadingMoreCommits = false
+		// Reset label state when entering a new module.
+		m.currentLabels = nil
+		m.loadingLabels = false
+		m.labelsList.SetItems(nil)
 		if len(m.currentCommits) == 0 {
 			return m, nil
 		}
 		commits := make([]list.Item, len(m.currentCommits))
-		for i, currentCommit := range m.currentCommits {			commits[i] = &commit{underlying: currentCommit, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule}
+		for i, currentCommit := range m.currentCommits {
+			commits[i] = &commit{underlying: currentCommit, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule}
 		}
 		m.commitList.SetItems(commits)
 		moduleURL := "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule
@@ -364,21 +358,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case contentsMsg:
 		m.state = modelStateBrowsingCommitContents
+		m.activeCommitTab = commitTabFiles
 		m.currentCommitFiles = msg.Files
 		commitFiles := make([]list.Item, len(m.currentCommitFiles))
 		for i, currentCommitFile := range m.currentCommitFiles {
 			commitFiles[i] = &commitFile{underlying: currentCommitFile, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule, commitID: m.currentCommitID}
 		}
 		m.commitFilesList.SetItems(commitFiles)
-		{
-			commitURL := "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule + "/commits/" + m.currentCommitID
-			m.commitFilesList.Title = breadcrumb(
-				m.remote, "https://"+m.remote,
-				m.currentOwner, "https://"+m.remote+"/"+m.currentOwner,
-				m.currentModule, "https://"+m.remote+"/"+m.currentOwner+"/"+m.currentModule,
-				m.currentCommitID[:12], commitURL,
-			)
-		}
 		m.commitFilesList.Styles = m.listStyles
 		m.commitFilesList.InfiniteScrolling = false
 		m.commitFilesList.AdditionalFullHelpKeys = func() []key.Binding {
@@ -394,6 +380,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		m.updateFileView(commitFile.underlying)
+		return m, nil
+
+	case labelsMsg:
+		m.currentLabels = []*modulev1.Label(msg)
+		m.loadingLabels = false
+		labels := make([]list.Item, len(msg))
+		for i, label := range msg {
+			labels[i] = &labelItem{underlying: label, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule}
+		}
+		m.labelsList.SetItems(labels)
+		m.labelsList.Styles = m.listStyles
 		return m, nil
 
 	case navigateSuggestionsMsg:
@@ -412,7 +409,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case modelStateLoadingCommitFileContents,
 			modelStateBrowsingCommitContents,
 			modelStateBrowsingCommitFileContents:
+			m.loadingLabels = false
 			m.state = modelStateBrowsingCommitContents
+			if m.activeCommitTab == commitTabLabels {
+				return m, m.labelsList.NewStatusMessage(errStr)
+			}
 			return m, m.commitFilesList.NewStatusMessage(errStr)
 		case modelStateLoadingReference, modelStateNavigating:
 			m.state = modelStateNavigating
@@ -438,6 +439,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
+
+		case key.Matches(msg, m.keys.TabLeft):
+			if m.state == modelStateBrowsingCommitContents || m.state == modelStateBrowsingCommitFileContents {
+				if m.state == modelStateBrowsingCommitFileContents {
+					m.state = modelStateBrowsingCommitContents
+				}
+				m.activeCommitTab = (m.activeCommitTab - 1 + commitTabCount) % commitTabCount
+				return m, m.loadTabIfNeeded()
+			}
+
+		case key.Matches(msg, m.keys.TabRight):
+			if m.state == modelStateBrowsingCommitContents || m.state == modelStateBrowsingCommitFileContents {
+				if m.state == modelStateBrowsingCommitFileContents {
+					m.state = modelStateBrowsingCommitContents
+				}
+				m.activeCommitTab = (m.activeCommitTab + 1) % commitTabCount
+				return m, m.loadTabIfNeeded()
+			}
+
 		case key.Matches(msg, m.keys.Back):
 			switch m.state {
 			case modelStateNavigating:
@@ -461,6 +481,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = modelStateBrowsingCommitContents
 				return m, nil
 			}
+
 		case key.Matches(msg, m.keys.Navigate):
 			// From anywhere other than the navigate state, "g"
 			// enters a navigate state.
@@ -473,6 +494,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.navigateErr = nil
 				return m, nil
 			}
+
 		case key.Matches(msg, m.keys.Enter):
 			switch m.state {
 			case modelStateNavigating:
@@ -495,16 +517,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				// Otherwise, treat it as an owner
 				m.currentOwner = navigateValue
-				// TODO: Clear navigate input?
 				return m, m.client.listModules(m.currentOwner)
 			}
 			// enter or l are equivalent for all the cases below.
 			fallthrough
+
 		case key.Matches(msg, m.keys.Right):
 			switch m.state {
 			case modelStateBrowsingModules:
 				if len(m.currentModules) == 0 {
-					// Don't do anything.
 					return m, nil
 				}
 				m.state = modelStateLoadingCommits
@@ -518,7 +539,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.client.listCommits(m.currentOwner, m.currentModule)
 			case modelStateBrowsingCommits:
 				if len(m.currentCommits) == 0 {
-					// Don't do anything.
 					return m, nil
 				}
 				m.state = modelStateLoadingCommitFileContents
@@ -531,34 +551,43 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currentCommitID = commit.underlying.Id
 				return m, m.client.getCommitContent(m.currentCommitID)
 			case modelStateBrowsingCommitContents:
-				m.state = modelStateBrowsingCommitFileContents
-				return m, nil
-			default:
-				// Don't do anything, yet, in other states.
+				switch m.activeCommitTab {
+				case commitTabFiles:
+					m.state = modelStateBrowsingCommitFileContents
+					return m, nil
+				case commitTabLabels:
+					if len(m.currentLabels) == 0 {
+						return m, nil
+					}
+					item := m.labelsList.SelectedItem()
+					label, ok := item.(*labelItem)
+					if !ok {
+						m.err = fmt.Errorf("invalid list item type: expected labelItem")
+						return m, tea.Quit
+					}
+					m.currentCommitID = label.underlying.CommitId
+					m.state = modelStateLoadingCommitFileContents
+					return m, m.client.getCommitContent(m.currentCommitID)
+				}
 			}
+
 		case key.Matches(msg, m.keys.Left):
-			// "h" -> "Go out"
 			switch m.state {
 			case modelStateBrowsingCommitFileContents:
 				m.state = modelStateBrowsingCommitContents
 				return m, nil
 			case modelStateBrowsingCommitContents:
-				// NOTE: We don't necessarily have the commits
-				// list populated, because we may have gone
-				// directly to a reference.
 				// TODO: Hook this up to caching.
 				m.state = modelStateLoadingCommits
 				m.commitFilesList.ResetSelected()
 				return m, m.client.listCommits(m.currentOwner, m.currentModule)
 			case modelStateBrowsingCommits:
-				// NOTE: We don't necessarily have the module
-				// list populated, because we may have gone
-				// directly to a reference.
 				// TODO: Hook this up to caching.
 				m.state = modelStateLoadingModules
 				m.commitList.ResetSelected()
 				return m, m.client.listModules(m.currentOwner)
 			}
+
 		case key.Matches(msg, m.keys.Yank):
 			var text string
 			var statusList *list.Model
@@ -638,7 +667,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				url = m.buildBrowserURL("module", module.underlying.Name)
 			}
-
 			if url != "" {
 				if err := browser.OpenURL(url); err != nil {
 					errStr := lipgloss.NewStyle().Foreground(colorError).Render(fmt.Sprintf("opening URL %q: %s", url, err))
@@ -647,6 +675,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, list.NewStatusMessage("opened " + lipgloss.NewStyle().Hyperlink(url).Render(url))
 			}
 		}
+
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -666,16 +695,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = tea.Batch(cmd, m.client.listMoreCommits(m.currentOwner, m.currentModule, m.nextCommitsPageToken))
 		}
 	case modelStateBrowsingCommitContents:
-		m.commitFilesList, cmd = m.commitFilesList.Update(msg)
-		item := m.commitFilesList.SelectedItem()
-		commitFile, ok := item.(*commitFile)
-		if !ok {
-			m.err = fmt.Errorf("invalid list item type: expected commitFile")
-			return m, tea.Quit
+		switch m.activeCommitTab {
+		case commitTabFiles:
+			m.commitFilesList, cmd = m.commitFilesList.Update(msg)
+			item := m.commitFilesList.SelectedItem()
+			commitFile, ok := item.(*commitFile)
+			if !ok {
+				m.err = fmt.Errorf("invalid list item type: expected commitFile")
+				return m, tea.Quit
+			}
+			m.updateFileView(commitFile.underlying)
+			m.fileViewport.GotoTop()
+		case commitTabLabels:
+			m.labelsList, cmd = m.labelsList.Update(msg)
 		}
-		m.updateFileView(commitFile.underlying)
-		// When we switch files, we reset the position of the viewport back to the top.
-		m.fileViewport.GotoTop()
 	case modelStateBrowsingCommitFileContents:
 		m.fileViewport, cmd = m.fileViewport.Update(msg)
 	case modelStateNavigating:
@@ -726,17 +759,41 @@ func (m model) View() tea.View {
 		}
 		view += "\n\n" + m.help.View(m)
 	case modelStateBrowsingCommitContents, modelStateBrowsingCommitFileContents:
-		fileViewStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true)
-		if m.state == modelStateBrowsingCommitFileContents {
-			fileViewStyle = fileViewStyle.BorderForeground(colorForeground)
-		} else {
-			fileViewStyle = fileViewStyle.BorderForeground(colorBackground)
-		}
-		view = lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			m.commitFilesList.View(),
-			fileViewStyle.Render(m.fileViewport.View()),
+		// Render the commit breadcrumb and tab bar as a persistent header.
+		commitURL := "https://" + m.remote + "/" + m.currentOwner + "/" + m.currentModule + "/commits/" + m.currentCommitID
+		header := breadcrumb(
+			m.remote, "https://"+m.remote,
+			m.currentOwner, "https://"+m.remote+"/"+m.currentOwner,
+			m.currentModule, "https://"+m.remote+"/"+m.currentOwner+"/"+m.currentModule,
+			m.currentCommitID[:12], commitURL,
 		)
+		tabBar := renderTabBar(m.activeCommitTab, m.isDark)
+
+		var contentView string
+		switch m.activeCommitTab {
+		case commitTabFiles:
+			fileViewStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true)
+			if m.state == modelStateBrowsingCommitFileContents {
+				fileViewStyle = fileViewStyle.BorderForeground(colorForeground)
+			} else {
+				fileViewStyle = fileViewStyle.BorderForeground(colorBackground)
+			}
+			contentView = lipgloss.JoinHorizontal(
+				lipgloss.Top,
+				m.commitFilesList.View(),
+				fileViewStyle.Render(m.fileViewport.View()),
+			)
+		case commitTabLabels:
+			if m.loadingLabels {
+				contentView = m.spinner.View() + " Loading labels"
+			} else if len(m.currentLabels) == 0 {
+				contentView = "No labels found for module"
+			} else {
+				contentView = m.labelsList.View()
+			}
+		}
+
+		view = header + "\n" + tabBar + "\n" + contentView
 		view += "\n\n" + m.help.View(m)
 	case modelStateNavigating:
 		header := "Navigate to owner or reference (e.g., owner/module or owner/module:ref)"
@@ -809,15 +866,12 @@ func highlightFile(filename, fileContents string, isDark bool, width int) (strin
 		return renderMarkdown(fileContents, isDark, width)
 	}
 	lexer := cmp.Or(lexers.Match(filename), lexers.Fallback)
-	// TODO: Make this configurable?
 	style := codeStyleLight
 	if isDark {
 		style = codeStyleDark
 	}
 	// TODO: This seemingly works on my terminal, but we may need
 	// to select a different one based on terminal type.
-	// I think we should be able to figure that out from
-	// tea/termenv, somehow.
 	formatter := cmp.Or(formatters.Get(chromaFormatter), formatters.Fallback)
 	iterator, err := lexer.Tokenise(nil, fileContents)
 	if err != nil {
@@ -853,6 +907,27 @@ func renderMarkdown(content string, isDark bool, width int) (string, error) {
 // suggestionsOwner returns the owner name to fetch module suggestions for
 // given the current navigate input value. Returns an empty string if the
 // owner cannot yet be determined from the input.
+func suggestionsOwner(input string) string {
+	slashCount := strings.Count(input, "/")
+	if slashCount == 0 {
+		return ""
+	}
+	parts := strings.SplitN(input, "/", 3)
+	if slashCount == 1 {
+		// "owner/..." — if the first segment looks like a remote (has a dot),
+		// we need another slash before we can determine the owner.
+		if strings.Contains(parts[0], ".") {
+			return ""
+		}
+		return parts[0]
+	}
+	// "a/b/..." — if a looks like a remote, b is the owner.
+	if strings.Contains(parts[0], ".") {
+		return parts[1]
+	}
+	return parts[0]
+}
+
 // labelSuggestionsModule returns "owner/module" when the input contains a
 // colon and we should fetch label suggestions for that module. Returns an
 // empty string if the module cannot yet be determined.
@@ -880,27 +955,6 @@ func labelSuggestionsModule(input string) string {
 		return parts[1] + "/" + parts[2]
 	}
 	return parts[0] + "/" + parts[1]
-}
-
-func suggestionsOwner(input string) string {
-	slashCount := strings.Count(input, "/")
-	if slashCount == 0 {
-		return ""
-	}
-	parts := strings.SplitN(input, "/", 3)
-	if slashCount == 1 {
-		// "owner/..." — if the first segment looks like a remote (has a dot),
-		// we need another slash before we can determine the owner.
-		if strings.Contains(parts[0], ".") {
-			return ""
-		}
-		return parts[0]
-	}
-	// "a/b/..." — if a looks like a remote, b is the owner.
-	if strings.Contains(parts[0], ".") {
-		return parts[1]
-	}
-	return parts[0]
 }
 
 func parseReference(reference string) (remote string, resourceRef *modulev1.ResourceRef_Name, err error) {
@@ -949,136 +1003,6 @@ func parseReference(reference string) (remote string, resourceRef *modulev1.Reso
 	return remote, moduleRef, nil
 }
 
-// keyMap defines a set of keybindings. To work for help it must satisfy
-// key.Map. It could also very easily be a map[string]key.Binding.
-type keyMap struct {
-	Up       key.Binding
-	Down     key.Binding
-	Left     key.Binding
-	Right    key.Binding
-	Back     key.Binding
-	Navigate key.Binding
-	Enter    key.Binding
-	Help     key.Binding
-	Quit     key.Binding
-	Browse   key.Binding
-	Yank     key.Binding
-}
-
-var keys = keyMap{
-	// TODO: Ideally we'd pull these from the viewing model KeyMap defaults
-	// (e.g. m.fileViewport.KeyMap); for now just give some basics.
-	Up: key.NewBinding(
-		key.WithKeys("up", "k"),
-		key.WithHelp("↑/k", "move up"),
-	),
-	Down: key.NewBinding(
-		key.WithKeys("down", "j"),
-		key.WithHelp("↓/j", "move down"),
-	),
-	Left: key.NewBinding(
-		key.WithKeys("left", "h"),
-		key.WithHelp("←/h", "go out"),
-	),
-	Right: key.NewBinding(
-		key.WithKeys("right", "l"),
-		key.WithHelp("→/l", "go in"),
-	),
-	Back: key.NewBinding(
-		key.WithKeys("esc"),
-		key.WithHelp("esc", "back / quit"),
-	),
-	Enter: key.NewBinding(
-		key.WithKeys("enter"),
-		key.WithHelp("enter", "navigate"),
-	),
-	Navigate: key.NewBinding(
-		key.WithKeys("g"),
-		key.WithHelp("g", "navigate to owner/module"),
-	),
-	Help: key.NewBinding(
-		key.WithKeys("?"),
-		key.WithHelp("?", "toggle help"),
-	),
-	Quit: key.NewBinding(
-		key.WithKeys("ctrl+c"),
-		key.WithHelp("ctrl+c", "quit"),
-	),
-	Browse: key.NewBinding(
-		key.WithKeys("o"),
-		key.WithHelp("o", "open in browser"),
-	),
-	Yank: key.NewBinding(
-		key.WithKeys("y"),
-		key.WithHelp("y", "copy URL"),
-	),
-}
-
-func (m model) ShortHelp() []key.Binding {
-	var shortHelp []key.Binding
-	switch m.state {
-	case modelStateBrowsingModules:
-		// Can't go Left while browsing modules; already at the "top".
-		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Browse, keys.Yank}
-		if len(m.currentModules) != 0 {
-			// Can only go right when modules exist.
-			shortHelp = append(shortHelp, keys.Right)
-		}
-	case modelStateBrowsingCommits, modelStateBrowsingCommitContents:
-		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Back, keys.Yank}
-		if len(m.currentCommits) != 0 {
-			// Can only go right when commits exist.
-			shortHelp = append(shortHelp, keys.Right)
-		}
-	case modelStateBrowsingCommitFileContents:
-		// Can't go Right while browsing file contents; already at the "bottom".
-		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Back, keys.Yank}
-	case modelStateNavigating:
-		shortHelp = []key.Binding{keys.Enter, keys.Back}
-		if len(m.navigateInput.AvailableSuggestions()) > 0 {
-			shortHelp = append(shortHelp,
-				key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "accept")),
-				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "cycle suggestions")),
-			)
-		}
-	default:
-		// In the other states, just show Help and Quit.
-		return []key.Binding{keys.Help, keys.Quit}
-	}
-	// Always show the Help key.
-	return append(shortHelp, keys.Help)
-}
-
-func (m model) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		m.ShortHelp(),
-		{keys.Left, keys.Navigate, keys.Help, keys.Quit},
-	}
-}
-
-func newNavigateInput() textinput.Model {
-	input := textinput.New()
-	input.Validate = func(inputStr string) error {
-		// Try to parse as a complete reference first.
-		if _, _, err := parseReference(inputStr); err == nil {
-			return nil
-		}
-		// A slash indicates a partial reference being typed (e.g. "owner/"
-		// or "owner/partialmodule"); don't show an error for intermediate states.
-		if strings.Contains(inputStr, "/") {
-			return nil
-		}
-		// Fall back to validating as an owner name.
-		return protovalidate.Validate(&ownerv1.OwnerRef{
-			Value: &ownerv1.OwnerRef_Name{Name: inputStr},
-		})
-	}
-	input.ShowSuggestions = true
-	input.Focus()
-	input.Placeholder = "bufbuild/registry:main"
-	return input
-}
-
 // updateFileView updates the file viewport with highlighted content for the given file.
 // If highlighting fails, the raw file content is shown as a fallback.
 func (m *model) updateFileView(file *modulev1.File) {
@@ -1105,63 +1029,6 @@ func (m *model) buildBrowserURL(resourceType string, resourcePath string) string
 	return ""
 }
 
-// relativeTime returns a human-readable relative time string for t.
-func relativeTime(t time.Time) string {
-	d := time.Since(t)
-	switch {
-	case d < time.Minute:
-		return "just now"
-	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(d.Hours()))
-	case d < 30*24*time.Hour:
-		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
-	case d < 365*24*time.Hour:
-		return fmt.Sprintf("%dmo ago", int(d.Hours()/(24*30)))
-	default:
-		return fmt.Sprintf("%dy ago", int(d.Hours()/(24*365)))
-	}
-}
-
-// renderHyperlink renders text as a terminal hyperlink to url.
-func renderHyperlink(text, url string) string {
-	return lipgloss.NewStyle().Hyperlink(url).Render(text)
-}
-
-// breadcrumb renders a › -separated sequence of hyperlinked segments.
-// Each pair of (text, url) arguments produces one linked segment.
-func breadcrumb(pairs ...string) string {
-	if len(pairs)%2 != 0 {
-		panic("breadcrumb requires an even number of arguments (text, url pairs)")
-	}
-	parts := make([]string, len(pairs)/2)
-	for i := range parts {
-		parts[i] = renderHyperlink(pairs[i*2], pairs[i*2+1])
-	}
-	return strings.Join(parts, " › ")
-}
-
-// helpStyles returns well-contrasted help bar styles for the given background.
-// The default bubbles styles have near-invisible colors in both light and dark
-// modes, so we override them using our brand colors for key names and readable
-// grays for descriptions and separators.
-func helpStyles(isDark bool) help.Styles {
-	lightDark := lipgloss.LightDark(isDark)
-	keyStyle := lipgloss.NewStyle().Foreground(lightDark(lipgloss.Color(bufBlue), lipgloss.Color(bufTeal)))
-	descStyle := lipgloss.NewStyle().Foreground(lightDark(lipgloss.Color("#555555"), lipgloss.Color("#aaaaaa")))
-	sepStyle := lipgloss.NewStyle().Foreground(lightDark(lipgloss.Color("#aaaaaa"), lipgloss.Color("#555555")))
-	return help.Styles{
-		ShortKey:       keyStyle,
-		ShortDesc:      descStyle,
-		ShortSeparator: sepStyle,
-		Ellipsis:       sepStyle,
-		FullKey:        keyStyle,
-		FullDesc:       descStyle,
-		FullSeparator:  sepStyle,
-	}
-}
-
 // activeListIsFiltering returns true when the list visible in the current state
 // is actively being filtered by the user.
 func (m model) activeListIsFiltering() bool {
@@ -1171,84 +1038,21 @@ func (m model) activeListIsFiltering() bool {
 	case modelStateBrowsingCommits:
 		return m.commitList.FilterState() == list.Filtering
 	case modelStateBrowsingCommitContents:
-		return m.commitFilesList.FilterState() == list.Filtering
+		if m.activeCommitTab == commitTabFiles {
+			return m.commitFilesList.FilterState() == list.Filtering
+		}
+		if m.activeCommitTab == commitTabLabels {
+			return m.labelsList.FilterState() == list.Filtering
+		}
 	}
 	return false
 }
 
-type module struct {
-	underlying *modulev1.Module
-	remote     string
-	owner      string
-}
-
-// FilterValue implements [list.Item].
-func (m *module) FilterValue() string {
-	return m.underlying.Name
-}
-
-// Title implements [list.DefaultItem].
-func (m *module) Title() string {
-	var title string
-	if m.underlying.Visibility == modulev1.ModuleVisibility_MODULE_VISIBILITY_PRIVATE {
-		title += "􀎠"
+// loadTabIfNeeded fires any data-fetching command required by the newly active tab.
+func (m *model) loadTabIfNeeded() tea.Cmd {
+	if m.activeCommitTab == commitTabLabels && len(m.currentLabels) == 0 && !m.loadingLabels {
+		m.loadingLabels = true
+		return m.client.listLabels(m.currentOwner, m.currentModule)
 	}
-	title += m.underlying.Name
-	if m.underlying.State == modulev1.ModuleState_MODULE_STATE_DEPRECATED {
-		title += " (Deprecated)"
-	}
-	return title
-}
-
-// Description implements [list.DefaultItem].
-func (m *module) Description() string {
-	return m.underlying.Description
-}
-
-type commit struct {
-	underlying *modulev1.Commit
-	remote     string
-	owner      string
-	moduleName string
-}
-
-// FilterValue implements list.Item.
-func (m *commit) FilterValue() string {
-	// TODO: What to filter on?
-	return m.underlying.Id
-}
-
-// Title implements list.DefaultItem.
-func (m *commit) Title() string {
-	return m.underlying.Id
-}
-
-// Description implements list.DefaultItem.
-func (m *commit) Description() string {
-	t := m.underlying.CreateTime.AsTime()
-	return fmt.Sprintf("%s (%s)", t.Format(time.Stamp), relativeTime(t))
-}
-
-type commitFile struct {
-	underlying *modulev1.File
-	remote     string
-	owner      string
-	moduleName string
-	commitID   string
-}
-
-// FilterValue implements list.Item.
-func (m *commitFile) FilterValue() string {
-	return m.underlying.Path
-}
-
-// Title implements list.DefaultItem.
-func (m *commitFile) Title() string {
-	return m.underlying.Path
-}
-
-// Description implements list.DefaultItem.
-// The description for a commit file is not shown.
-func (m *commitFile) Description() string {
-	return ""
+	return nil
 }

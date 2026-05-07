@@ -39,6 +39,8 @@ func newClient(httpClient connect.HTTPClient, remote, token string) *client {
 
 type modulesMsg []*modulev1.Module
 
+type labelsMsg []*modulev1.Label
+
 func (c *client) listModules(currentOwner string) tea.Cmd {
 	return func() tea.Msg {
 		var allModules []*modulev1.Module
@@ -180,6 +182,38 @@ func (c *client) getResource(resourceName *modulev1.ResourceRef_Name) tea.Cmd {
 			requestedResource: resourceName,
 			retrievedResource: response.Msg.Resources[0],
 		}
+	}
+}
+
+func (c *client) listLabels(owner, module string) tea.Cmd {
+	return func() tea.Msg {
+		var allLabels []*modulev1.Label
+		pageToken := ""
+		for {
+			request := connect.NewRequest(&modulev1.ListLabelsRequest{
+				PageSize:  pageSize,
+				PageToken: pageToken,
+				ResourceRef: &modulev1.ResourceRef{
+					Value: &modulev1.ResourceRef_Name_{
+						Name: &modulev1.ResourceRef_Name{
+							Owner:  owner,
+							Module: module,
+						},
+					},
+				},
+				ArchiveFilter: modulev1.ListLabelsRequest_ARCHIVE_FILTER_UNARCHIVED_ONLY,
+			})
+			response, err := c.labelServiceClient.ListLabels(context.Background(), request)
+			if err != nil {
+				return errMsg{fmt.Errorf("listing labels: %w", err)}
+			}
+			allLabels = append(allLabels, response.Msg.Labels...)
+			if response.Msg.NextPageToken == "" {
+				break
+			}
+			pageToken = response.Msg.NextPageToken
+		}
+		return labelsMsg(allLabels)
 	}
 }
 
