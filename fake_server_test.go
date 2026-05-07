@@ -405,3 +405,76 @@ func TestModuleFilteringNoOSCCodes(t *testing.T) {
 		attest.Equal(t, m.err, nil)
 	}
 }
+
+// TestErrorRecovery verifies that API/network errors never halt the app.
+// Each loading state should transition to a browsable state and surface the
+// error as a status message or inline navigate error rather than setting m.err.
+func TestErrorRecovery(t *testing.T) {
+	t.Parallel()
+
+	injected := fmt.Errorf("injected failure")
+
+	tests := []struct {
+		name          string
+		initialState  modelState
+		wantState     modelState
+		wantNavigateErr bool
+	}{
+		{
+			name:         "error while loading modules",
+			initialState: modelStateLoadingModules,
+			wantState:    modelStateBrowsingModules,
+		},
+		{
+			name:         "error while loading commits",
+			initialState: modelStateLoadingCommits,
+			wantState:    modelStateBrowsingCommits,
+		},
+		{
+			name:         "error while loading commit file contents",
+			initialState: modelStateLoadingCommitFileContents,
+			wantState:    modelStateBrowsingCommitContents,
+		},
+		{
+			name:            "error while loading reference",
+			initialState:    modelStateLoadingReference,
+			wantState:       modelStateNavigating,
+			wantNavigateErr: true,
+		},
+		{
+			name:         "error while browsing commits (e.g. load more)",
+			initialState: modelStateBrowsingCommits,
+			wantState:    modelStateBrowsingCommits,
+		},
+		{
+			name:            "error in unexpected state falls back to navigate",
+			initialState:    modelStateLoadingModules - 1, // deliberate unknown state
+			wantState:       modelStateNavigating,
+			wantNavigateErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := startFakeServer(t)
+			m := newTestModel(c)
+			m.state = tt.initialState
+
+			m2, _ := m.Update(errMsg{err: injected})
+			m = m2.(model)
+
+			// Must never set m.err — that halts the app permanently.
+			attest.Equal(t, m.err, nil)
+			// Must land in the expected state.
+			attest.Equal(t, m.state, tt.wantState)
+			// Navigate errors must be surfaced via navigateErr, not m.err.
+			if tt.wantNavigateErr {
+				attest.NotEqual(t, m.navigateErr, nil)
+			} else {
+				attest.Equal(t, m.navigateErr, nil)
+			}
+		})
+	}
+}

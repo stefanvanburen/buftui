@@ -177,6 +177,8 @@ type model struct {
 	previousState modelState
 	// Should exit when setting this.
 	err error
+	// navigateErr holds a recoverable error to display in the navigate view.
+	navigateErr error
 
 	// State-related data
 	currentOwner       string
@@ -287,8 +289,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = modelStateLoadingCommitFileContents
 			return m, m.client.getCommitContent(m.currentCommitID)
 		default:
-			m.err = fmt.Errorf("cannot handle type resource of type %T", retrievedResource)
-			return m, tea.Quit
+			m.state = modelStateNavigating
+			m.navigateErr = fmt.Errorf("cannot handle resource of type %T", retrievedResource)
+			return m, nil
 		}
 
 	case modulesMsg:
@@ -376,10 +379,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = fmt.Errorf("invalid list item type: expected commitFile")
 			return m, tea.Quit
 		}
-		if err := m.updateFileView(commitFile.underlying); err != nil {
-			m.err = err
-			return m, tea.Quit
-		}
+		m.updateFileView(commitFile.underlying)
 		return m, nil
 
 	case navigateSuggestionsMsg:
@@ -387,8 +387,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case errMsg:
-		m.err = msg.err
-		return m, nil
+		errStr := lipgloss.NewStyle().Foreground(colorError).Render(msg.err.Error())
+		switch m.state {
+		case modelStateLoadingModules, modelStateBrowsingModules:
+			m.state = modelStateBrowsingModules
+			return m, m.moduleList.NewStatusMessage(errStr)
+		case modelStateLoadingCommits, modelStateBrowsingCommits:
+			m.state = modelStateBrowsingCommits
+			return m, m.commitList.NewStatusMessage(errStr)
+		case modelStateLoadingCommitFileContents,
+			modelStateBrowsingCommitContents,
+			modelStateBrowsingCommitFileContents:
+			m.state = modelStateBrowsingCommitContents
+			return m, m.commitFilesList.NewStatusMessage(errStr)
+		case modelStateLoadingReference, modelStateNavigating:
+			m.state = modelStateNavigating
+			m.navigateErr = msg.err
+			return m, nil
+		default:
+			// Fallback for any state not explicitly handled above — show the
+			// error in the navigate view rather than halting.
+			m.state = modelStateNavigating
+			m.navigateErr = msg.err
+			return m, nil
+		}
 
 	case tea.KeyPressMsg:
 		if key.Matches(msg, m.keys.Quit) {
@@ -434,6 +456,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.navigateInput.Reset()
 				m.navigateInput.SetSuggestions(nil)
 				m.currentSuggestionsKey = ""
+				m.navigateErr = nil
 				return m, nil
 			}
 		case key.Matches(msg, m.keys.Enter):
@@ -449,7 +472,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err == nil && parsedReference != nil {
 					// It's a reference, navigate directly to it
 					if parsedRemote != "" && m.remote != parsedRemote && parsedRemote != defaultRemote {
-						m.err = fmt.Errorf("cannot navigate to reference on different remote (%s) than current remote (%s)", parsedRemote, m.remote)
+						m.navigateErr = fmt.Errorf("cannot navigate to reference on different remote (%s) than current remote (%s)", parsedRemote, m.remote)
 						return m, nil
 					}
 					m.currentReference = parsedReference
@@ -604,8 +627,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if url != "" {
 				if err := browser.OpenURL(url); err != nil {
-					m.err = fmt.Errorf("opening URL %q: %w", url, err)
-					return m, nil
+					errStr := lipgloss.NewStyle().Foreground(colorError).Render(fmt.Sprintf("opening URL %q: %s", url, err))
+					return m, list.NewStatusMessage(errStr)
 				}
 				return m, list.NewStatusMessage("opened " + lipgloss.NewStyle().Hyperlink(url).Render(url))
 			}
@@ -636,10 +659,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = fmt.Errorf("invalid list item type: expected commitFile")
 			return m, tea.Quit
 		}
-		if err := m.updateFileView(commitFile.underlying); err != nil {
-			m.err = err
-			return m, tea.Quit
-		}
+		m.updateFileView(commitFile.underlying)
 		// When we switch files, we reset the position of the viewport back to the top.
 		m.fileViewport.GotoTop()
 	case modelStateBrowsingCommitFileContents:
@@ -713,6 +733,11 @@ func (m model) View() tea.View {
 			errView = "\n\n" + lipgloss.NewStyle().
 				Foreground(colorError).
 				Render(m.navigateInput.Err.Error())
+		} else if m.navigateErr != nil {
+			borderColor = colorError
+			errView = "\n\n" + lipgloss.NewStyle().
+				Foreground(colorError).
+				Render(m.navigateErr.Error())
 		}
 		inputView := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -1041,13 +1066,14 @@ func newNavigateInput() textinput.Model {
 }
 
 // updateFileView updates the file viewport with highlighted content for the given file.
-func (m *model) updateFileView(file *modulev1.File) error {
-	highlightedFile, err := highlightFile(file.Path, string(file.Content), m.isDark, m.fileViewport.Width())
+// If highlighting fails, the raw file content is shown as a fallback.
+func (m *model) updateFileView(file *modulev1.File) {
+	highlighted, err := highlightFile(file.Path, string(file.Content), m.isDark, m.fileViewport.Width())
 	if err != nil {
-		return fmt.Errorf("highlighting file: %w", err)
+		m.fileViewport.SetContent(string(file.Content))
+		return
 	}
-	m.fileViewport.SetContent(highlightedFile)
-	return nil
+	m.fileViewport.SetContent(highlighted)
 }
 
 // buildBrowserURL constructs a URL for the browser based on the current context.
