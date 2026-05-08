@@ -102,6 +102,10 @@ func (m model) ShortHelp() []key.Binding {
 	case modelStateBrowsingCommitContents:
 		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Back, keys.TabLeft, keys.TabRight}
 		switch m.activeCommitTab {
+		case commitTabDocs:
+			if len(m.docsList.Items()) > 0 {
+				shortHelp = append(shortHelp, keys.Right)
+			}
 		case commitTabFiles:
 			shortHelp = append(shortHelp, keys.Yank, keys.Right)
 		case commitTabLabels:
@@ -110,7 +114,11 @@ func (m model) ShortHelp() []key.Binding {
 			}
 		}
 	case modelStateBrowsingCommitFileContents:
-		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Back, keys.Yank, keys.TabLeft, keys.TabRight}
+		if m.activeCommitTab == commitTabDocs {
+			shortHelp = []key.Binding{keys.Up, keys.Down, keys.Back, keys.TabLeft, keys.TabRight}
+		} else {
+			shortHelp = []key.Binding{keys.Up, keys.Down, keys.Back, keys.Yank, keys.TabLeft, keys.TabRight}
+		}
 	case modelStateNavigating:
 		shortHelp = []key.Binding{keys.Enter, keys.Back}
 		if len(m.navigateInput.AvailableSuggestions()) > 0 {

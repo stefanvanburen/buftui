@@ -107,6 +107,7 @@ type labelItem struct {
 	remote     string
 	owner      string
 	moduleName string
+	isDefault  bool
 }
 
 // FilterValue implements list.Item.
@@ -116,6 +117,9 @@ func (l *labelItem) FilterValue() string {
 
 // Title implements list.DefaultItem.
 func (l *labelItem) Title() string {
+	if l.isDefault {
+		return l.underlying.Name + " (default)"
+	}
 	return l.underlying.Name
 }
 

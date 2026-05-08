@@ -3,12 +3,22 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/module/v1/modulev1connect"
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
 	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
 	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect"
+	"github.com/bufbuild/protocompile/experimental/fdp"
+	"github.com/bufbuild/protocompile/experimental/incremental"
+	"github.com/bufbuild/protocompile/experimental/incremental/queries"
+	"github.com/bufbuild/protocompile/experimental/ir"
+	"github.com/bufbuild/protocompile/experimental/source"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/descriptorpb"
 )
 
 const pageSize = 250
@@ -19,6 +29,7 @@ type client struct {
 	downloadServiceClient modulev1connect.DownloadServiceClient
 	resourceServiceClient modulev1connect.ResourceServiceClient
 	labelServiceClient    modulev1connect.LabelServiceClient
+	graphServiceClient    modulev1connect.GraphServiceClient
 }
 
 func newClient(httpClient connect.HTTPClient, remote, token string) *client {
@@ -34,12 +45,15 @@ func newClient(httpClient connect.HTTPClient, remote, token string) *client {
 		downloadServiceClient: modulev1connect.NewDownloadServiceClient(httpClient, address, options),
 		resourceServiceClient: modulev1connect.NewResourceServiceClient(httpClient, address, options),
 		labelServiceClient:    modulev1connect.NewLabelServiceClient(httpClient, address, options),
+		graphServiceClient:    modulev1connect.NewGraphServiceClient(httpClient, address, options),
 	}
 }
 
 type modulesMsg []*modulev1.Module
 
 type labelsMsg []*modulev1.Label
+
+type docsMsg *protoregistry.Files
 
 func (c *client) listModules(currentOwner string) tea.Cmd {
 	return func() tea.Msg {
@@ -264,6 +278,111 @@ func (c *client) fetchModuleSuggestions(owner string) tea.Cmd {
 		return navigateSuggestionsMsg(suggestions)
 	}
 }
+// compileDocs fetches transitive dependencies via the graph service, downloads
+// their proto files, and compiles everything using the experimental incremental
+// compiler from protocompile.
+func (c *client) compileDocs(commitID string, currentFiles []*modulev1.File) tea.Cmd {
+	return func() tea.Msg {
+		// 1. Get the full transitive dependency graph.
+		graphResp, err := c.graphServiceClient.GetGraph(context.Background(), connect.NewRequest(&modulev1.GetGraphRequest{
+			ResourceRefs: []*modulev1.ResourceRef{{
+				Value: &modulev1.ResourceRef_Id{Id: commitID},
+			}},
+		}))
+		if err != nil {
+			return errMsg{fmt.Errorf("getting dependency graph: %w", err)}
+		}
+
+		// 2. Collect dep commit IDs (everything in the graph except the current commit).
+		var depCommitIDs []string
+		for _, commit := range graphResp.Msg.Graph.Commits {
+			if commit.Id != commitID {
+				depCommitIDs = append(depCommitIDs, commit.Id)
+			}
+		}
+
+		// 3. Seed the source map from the current module's proto files.
+		fileMap := source.NewMap(nil)
+		for _, f := range currentFiles {
+			if strings.HasSuffix(f.Path, ".proto") {
+				fileMap.Add(f.Path, string(f.Content))
+			}
+		}
+
+		// 4. Batch-download all dep proto files in a single request.
+		if len(depCommitIDs) > 0 {
+			values := make([]*modulev1.DownloadRequest_Value, len(depCommitIDs))
+			for i, id := range depCommitIDs {
+				values[i] = &modulev1.DownloadRequest_Value{
+					ResourceRef: &modulev1.ResourceRef{
+						Value: &modulev1.ResourceRef_Id{Id: id},
+					},
+					FileTypes: []modulev1.FileType{modulev1.FileType_FILE_TYPE_PROTO},
+				}
+			}
+			dlResp, err := c.downloadServiceClient.Download(context.Background(), connect.NewRequest(&modulev1.DownloadRequest{
+				Values: values,
+			}))
+			if err != nil {
+				return errMsg{fmt.Errorf("downloading dependencies: %w", err)}
+			}
+			for _, content := range dlResp.Msg.Contents {
+				for _, f := range content.Files {
+					if strings.HasSuffix(f.Path, ".proto") {
+						fileMap.Add(f.Path, string(f.Content))
+					}
+				}
+			}
+		}
+
+		// 5. Build the opener: WKTs first, then module files.
+		opener := &source.Openers{source.WKTs(), fileMap}
+
+		// 6. Compile main module proto files using the experimental incremental compiler.
+		session := &ir.Session{}
+		executor := incremental.New()
+		irQueries := make([]incremental.Query[*ir.File], 0, len(currentFiles))
+		for _, f := range currentFiles {
+			if strings.HasSuffix(f.Path, ".proto") {
+				irQueries = append(irQueries, queries.IR{
+					Opener:  opener,
+					Session: session,
+					Path:    f.Path,
+				})
+			}
+		}
+		irResults, _, err := incremental.Run(context.Background(), executor, irQueries...)
+		if err != nil {
+			return errMsg{fmt.Errorf("compiling protos: %w", err)}
+		}
+		irFiles := make([]*ir.File, 0, len(irResults))
+		for _, r := range irResults {
+			if r.Fatal != nil {
+				return errMsg{fmt.Errorf("compiling protos: %w", r.Fatal)}
+			}
+			irFiles = append(irFiles, r.Value)
+		}
+
+		// 7. Convert IR files to a FileDescriptorSet (includes all deps except WKTs),
+		// with source code info for comments.
+		fdsBytes, err := fdp.DescriptorSetBytes(irFiles, fdp.IncludeSourceCodeInfo(true))
+		if err != nil {
+			return errMsg{fmt.Errorf("generating file descriptors: %w", err)}
+		}
+		var fds descriptorpb.FileDescriptorSet
+		if err := proto.Unmarshal(fdsBytes, &fds); err != nil {
+			return errMsg{fmt.Errorf("unmarshalling file descriptors: %w", err)}
+		}
+
+		// 8. Build a registry; WKT deps are resolved from the global registry.
+		regFiles, err := protodesc.NewFiles(&fds)
+		if err != nil {
+			return errMsg{fmt.Errorf("building file registry: %w", err)}
+		}
+		return docsMsg(regFiles)
+	}
+}
+
 // newAuthInterceptor creates a client-only interceptor for adding authentication to requests.
 func newAuthInterceptor(token string) connect.UnaryInterceptorFunc {
 	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {

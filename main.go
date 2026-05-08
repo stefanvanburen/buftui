@@ -25,6 +25,7 @@ import (
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/bufbuild/httplb"
+	"google.golang.org/protobuf/reflect/protoregistry"
 	"github.com/cli/browser"
 	"github.com/jdx/go-netrc"
 	"github.com/peterbourgon/ff/v4"
@@ -110,6 +111,11 @@ func run(_ context.Context, args []string) error {
 	labelsList.SetShowTitle(false)
 	labelsList.SetStatusBarItemName("label", "labels")
 
+	docsList := list.New(nil, delegate, 20, 20)
+	docsList.SetShowHelp(false)
+	docsList.SetShowTitle(false)
+	docsList.SetStatusBarItemName("definition", "definitions")
+
 	model := model{
 		state:            initialState,
 		spinner:          spinner.New(spinner.WithSpinner(spinner.Dot)),
@@ -125,6 +131,8 @@ func run(_ context.Context, args []string) error {
 		commitList:      commitList,
 		commitFilesList: commitFilesList,
 		labelsList:      labelsList,
+		docsList:        docsList,
+		docsViewport:    viewport.New(),
 	}
 
 	if _, err := tea.NewProgram(model).Run(); err != nil {
@@ -167,6 +175,7 @@ type model struct {
 	// State-related data
 	currentOwner         string
 	currentModule        string
+	currentDefaultLabelName string
 	currentCommitID      string
 	currentModules       modulesMsg
 	currentCommits       []*modulev1.Commit
@@ -176,6 +185,9 @@ type model struct {
 	currentReference     *modulev1.ResourceRef_Name
 	currentLabels        []*modulev1.Label
 	loadingLabels        bool
+	compiledDocs         *protoregistry.Files
+	loadingDocs          bool
+	ownProtoFilePaths    map[string]bool
 
 	// Tab state
 	activeCommitTab commitTab
@@ -185,6 +197,8 @@ type model struct {
 	commitList      list.Model
 	commitFilesList list.Model
 	labelsList      list.Model
+	docsList        list.Model
+	docsViewport    viewport.Model
 	fileViewport    viewport.Model
 	navigateInput   textinput.Model
 	help            help.Model
@@ -245,6 +259,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.labelsList.SetDelegate(delegate)
 		}
 
+		{
+			delegate := list.NewDefaultDelegate()
+			delegate.Styles = listItemStyles
+			m.docsList.SetDelegate(delegate)
+		}
+
 	case tea.WindowSizeMsg:
 		m.help.SetWidth(msg.Width)
 
@@ -259,6 +279,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fileViewport.SetWidth(msg.Width / 2)
 		m.labelsList.SetHeight(msg.Height - 7)
 		m.labelsList.SetWidth(msg.Width)
+		m.docsList.SetHeight(msg.Height - 7)
+		m.docsList.SetWidth(msg.Width / 3)
+		m.docsViewport.SetHeight(msg.Height - 7)
+		m.docsViewport.SetWidth(msg.Width * 2 / 3)
 		m.navigateInput.SetWidth(min(msg.Width, 50))
 
 	case resourceMsg:
@@ -358,8 +382,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case contentsMsg:
 		m.state = modelStateBrowsingCommitContents
-		m.activeCommitTab = commitTabFiles
+		m.activeCommitTab = commitTabDocs
 		m.currentCommitFiles = msg.Files
+		// Track which paths belong to this module for docs entity filtering.
+		m.ownProtoFilePaths = make(map[string]bool)
+		for _, f := range msg.Files {
+			if strings.HasSuffix(f.Path, ".proto") {
+				m.ownProtoFilePaths[f.Path] = true
+			}
+		}
+		// Reset docs state for the new commit.
+		m.compiledDocs = nil
+		m.loadingDocs = true
+		m.docsList.SetItems(nil)
 		commitFiles := make([]list.Item, len(m.currentCommitFiles))
 		for i, currentCommitFile := range m.currentCommitFiles {
 			commitFiles[i] = &commitFile{underlying: currentCommitFile, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule, commitID: m.currentCommitID}
@@ -380,14 +415,43 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		m.updateFileView(commitFile.underlying)
+		return m, m.client.compileDocs(m.currentCommitID, m.currentCommitFiles)
+
+	case docsMsg:
+		m.compiledDocs = (*protoregistry.Files)(msg)
+		m.loadingDocs = false
+		items := packagesFromDocs(m.compiledDocs, m.ownProtoFilePaths)
+		m.docsList.SetItems(items)
+		if len(items) > 0 {
+			if pkg, ok := m.docsList.SelectedItem().(*docsPackage); ok {
+				m.docsViewport.SetContent(renderPackage(pkg, m.isDark))
+			}
+		}
 		return m, nil
 
 	case labelsMsg:
-		m.currentLabels = []*modulev1.Label(msg)
 		m.loadingLabels = false
-		labels := make([]list.Item, len(msg))
-		for i, label := range msg {
-			labels[i] = &labelItem{underlying: label, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule}
+		m.currentLabels = []*modulev1.Label(msg)
+
+		// Default label first, then others sorted by UpdateTime descending.
+		var defaultLabel *modulev1.Label
+		var otherLabels []*modulev1.Label
+		for _, label := range m.currentLabels {
+			if label.Name == m.currentDefaultLabelName {
+				defaultLabel = label
+			} else {
+				otherLabels = append(otherLabels, label)
+			}
+		}
+		slices.SortStableFunc(otherLabels, func(a, b *modulev1.Label) int {
+			return b.UpdateTime.AsTime().Compare(a.UpdateTime.AsTime())
+		})
+		labels := make([]list.Item, 0, len(m.currentLabels))
+		if defaultLabel != nil {
+			labels = append(labels, &labelItem{underlying: defaultLabel, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule, isDefault: true})
+		}
+		for _, label := range otherLabels {
+			labels = append(labels, &labelItem{underlying: label, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule})
 		}
 		m.labelsList.SetItems(labels)
 		m.labelsList.Styles = m.listStyles
@@ -536,6 +600,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tea.Quit
 				}
 				m.currentModule = module.underlying.Name
+				m.currentDefaultLabelName = module.underlying.DefaultLabelName
 				return m, m.client.listCommits(m.currentOwner, m.currentModule)
 			case modelStateBrowsingCommits:
 				if len(m.currentCommits) == 0 {
@@ -552,6 +617,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.client.getCommitContent(m.currentCommitID)
 			case modelStateBrowsingCommitContents:
 				switch m.activeCommitTab {
+				case commitTabDocs:
+					m.state = modelStateBrowsingCommitFileContents
+					return m, nil
 				case commitTabFiles:
 					m.state = modelStateBrowsingCommitFileContents
 					return m, nil
@@ -708,9 +776,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.fileViewport.GotoTop()
 		case commitTabLabels:
 			m.labelsList, cmd = m.labelsList.Update(msg)
+		case commitTabDocs:
+			prevIdx := m.docsList.Index()
+			m.docsList, cmd = m.docsList.Update(msg)
+			if m.docsList.Index() != prevIdx {
+			if pkg, ok := m.docsList.SelectedItem().(*docsPackage); ok {
+				m.docsViewport.SetContent(renderPackage(pkg, m.isDark))
+				m.docsViewport.GotoTop()
+			}
+			}
 		}
 	case modelStateBrowsingCommitFileContents:
-		m.fileViewport, cmd = m.fileViewport.Update(msg)
+		if m.activeCommitTab == commitTabDocs {
+			m.docsViewport, cmd = m.docsViewport.Update(msg)
+		} else {
+			m.fileViewport, cmd = m.fileViewport.Update(msg)
+		}
 	case modelStateNavigating:
 		m.navigateInput, cmd = m.navigateInput.Update(msg)
 		inputValue := m.navigateInput.Value()
@@ -790,6 +871,26 @@ func (m model) View() tea.View {
 				contentView = "No labels found for module"
 			} else {
 				contentView = m.labelsList.View()
+			}
+		case commitTabDocs:
+			if m.loadingDocs {
+				contentView = m.spinner.View() + " Compiling docs"
+			} else if m.compiledDocs == nil {
+				contentView = "No proto files found"
+			} else if len(m.docsList.Items()) == 0 {
+				contentView = "No services, messages, or enums found"
+			} else {
+				docsViewStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true)
+				if m.state == modelStateBrowsingCommitFileContents {
+					docsViewStyle = docsViewStyle.BorderForeground(colorForeground)
+				} else {
+					docsViewStyle = docsViewStyle.BorderForeground(colorBackground)
+				}
+				contentView = lipgloss.JoinHorizontal(
+					lipgloss.Top,
+					m.docsList.View(),
+					docsViewStyle.Render(m.docsViewport.View()),
+				)
 			}
 		}
 
@@ -1043,6 +1144,9 @@ func (m model) activeListIsFiltering() bool {
 		}
 		if m.activeCommitTab == commitTabLabels {
 			return m.labelsList.FilterState() == list.Filtering
+		}
+		if m.activeCommitTab == commitTabDocs {
+			return m.docsList.FilterState() == list.Filtering
 		}
 	}
 	return false

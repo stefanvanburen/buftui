@@ -10,13 +10,16 @@ import (
 type commitTab int
 
 const (
-	commitTabFiles  commitTab = iota
+	commitTabDocs    commitTab = iota
+	commitTabFiles
 	commitTabLabels
 	commitTabCount // sentinel for wrapping
 )
 
 func (t commitTab) String() string {
 	switch t {
+	case commitTabDocs:
+		return "Docs"
 	case commitTabFiles:
 		return "Files"
 	case commitTabLabels:
@@ -27,6 +30,7 @@ func (t commitTab) String() string {
 }
 
 var allCommitTabs = []commitTab{
+	commitTabDocs,
 	commitTabFiles,
 	commitTabLabels,
 }
