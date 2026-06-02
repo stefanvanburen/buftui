@@ -3,14 +3,14 @@ module github.com/stefanvanburen/buftui
 go 1.26.0
 
 require (
-	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.19.2-20260126144947-819582968857.1
-	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.11-20260126144947-819582968857.1
+	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.20.0-20260507063250-43b0c5a6cd08.1
+	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.11-20260507063250-43b0c5a6cd08.1
 	buf.build/go/protovalidate v1.2.0
 	charm.land/bubbles/v2 v2.1.0
 	charm.land/bubbletea/v2 v2.0.2
 	charm.land/glamour/v2 v2.0.0
 	charm.land/lipgloss/v2 v2.0.3
-	connectrpc.com/connect v1.19.2
+	connectrpc.com/connect v1.20.0
 	github.com/alecthomas/chroma/v2 v2.24.1
 	github.com/bufbuild/httplb v0.4.1
 	github.com/bufbuild/protocompile v0.14.2-0.20260429155904-12ef1ef2ce91
