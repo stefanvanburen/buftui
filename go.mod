@@ -9,7 +9,7 @@ require (
 	charm.land/bubbles/v2 v2.1.0
 	charm.land/bubbletea/v2 v2.0.7
 	charm.land/glamour/v2 v2.0.0
-	charm.land/lipgloss/v2 v2.0.3
+	charm.land/lipgloss/v2 v2.0.4
 	connectrpc.com/connect v1.20.0
 	github.com/alecthomas/chroma/v2 v2.26.1
 	github.com/bufbuild/httplb v0.4.1
