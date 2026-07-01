@@ -14,11 +14,6 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 )
 
-// ptr is a generic helper for proto scalar pointer fields.
-//
-//go:fix inline
-func ptr[T any](v T) *T { return new(v) }
-
 // buildTestRegistry creates a *protoregistry.Files from a FileDescriptorProto.
 func buildTestRegistry(t *testing.T, fdp *descriptorpb.FileDescriptorProto) *protoregistry.Files {
 	t.Helper()
