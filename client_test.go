@@ -23,23 +23,23 @@ func buildCustomOptionFDS(t *testing.T) []byte {
 	descProtoFDP := protodesc.ToFileDescriptorProto((&descriptorpb.FileOptions{}).ProtoReflect().Descriptor().ParentFile())
 
 	customFDP := &descriptorpb.FileDescriptorProto{
-		Name:       ptr("custom.proto"),
-		Syntax:     ptr("proto3"),
-		Package:    ptr("custom"),
+		Name:       new("custom.proto"),
+		Syntax:     new("proto3"),
+		Package:    new("custom"),
 		Dependency: []string{"google/protobuf/descriptor.proto"},
 		Extension: []*descriptorpb.FieldDescriptorProto{
 			{
-				Name:     ptr("my_label"),
-				Number:   ptr(int32(50001)),
+				Name:     new("my_label"),
+				Number:   new(int32(50001)),
 				Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
 				Type:     descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
-				Extendee: ptr(".google.protobuf.FieldOptions"),
+				Extendee: new(".google.protobuf.FieldOptions"),
 			},
 		},
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("M"),
+			Name: new("M"),
 			Field: []*descriptorpb.FieldDescriptorProto{
-				{Name: ptr("labeled"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+				{Name: new("labeled"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
 			},
 		}},
 	}
@@ -117,13 +117,13 @@ func TestResolveRegistry_NoCustomOptions(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("plain.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("plain"),
+		Name:    new("plain.proto"),
+		Syntax:  new("proto3"),
+		Package: new("plain"),
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("M"),
+			Name: new("M"),
 			Field: []*descriptorpb.FieldDescriptorProto{
-				{Name: ptr("x"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+				{Name: new("x"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
 			},
 		}},
 	}

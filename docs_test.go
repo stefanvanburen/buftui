@@ -15,7 +15,9 @@ import (
 )
 
 // ptr is a generic helper for proto scalar pointer fields.
-func ptr[T any](v T) *T { return &v }
+//
+//go:fix inline
+func ptr[T any](v T) *T { return new(v) }
 
 // buildTestRegistry creates a *protoregistry.Files from a FileDescriptorProto.
 func buildTestRegistry(t *testing.T, fdp *descriptorpb.FileDescriptorProto) *protoregistry.Files {
@@ -35,22 +37,22 @@ func buildExtensionType(t *testing.T, extendee, name string, number int32, typ d
 	t.Helper()
 	descProtoFDP := protodesc.ToFileDescriptorProto((&descriptorpb.FileOptions{}).ProtoReflect().Descriptor().ParentFile())
 	extFDP := &descriptorpb.FileDescriptorProto{
-		Name:       ptr("testext.proto"),
-		Syntax:     ptr("proto3"),
-		Package:    ptr("testext"),
+		Name:       new("testext.proto"),
+		Syntax:     new("proto3"),
+		Package:    new("testext"),
 		Dependency: []string{"google/protobuf/descriptor.proto"},
 		Extension: []*descriptorpb.FieldDescriptorProto{{
-			Name:     ptr(name),
-			Number:   ptr(number),
+			Name:     new(name),
+			Number:   new(number),
 			Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
 			Type:     typ.Enum(),
 			TypeName: nonEmptyPtr(typeName),
-			Extendee: ptr(extendee),
+			Extendee: new(extendee),
 		}},
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("Detail"),
+			Name: new("Detail"),
 			Field: []*descriptorpb.FieldDescriptorProto{
-				{Name: ptr("name"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+				{Name: new("name"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
 			},
 		}},
 	}
@@ -119,37 +121,37 @@ func TestPackagesFromDocs_Ordering(t *testing.T) {
 	// 1 enum, and 1 extension — all in the same package, declared in reverse
 	// alphabetical order to verify sorting is applied within each kind.
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("test.proto"),
-		Syntax:  ptr("proto2"),
-		Package: ptr("test"),
+		Name:    new("test.proto"),
+		Syntax:  new("proto2"),
+		Package: new("test"),
 		MessageType: []*descriptorpb.DescriptorProto{
 			{
-				Name: ptr("Zebra"),
+				Name: new("Zebra"),
 				ExtensionRange: []*descriptorpb.DescriptorProto_ExtensionRange{
-					{Start: ptr(int32(1000)), End: ptr(int32(2000))},
+					{Start: new(int32(1000)), End: new(int32(2000))},
 				},
 			},
-			{Name: ptr("Apple")},
+			{Name: new("Apple")},
 		},
 		EnumType: []*descriptorpb.EnumDescriptorProto{
 			{
-				Name: ptr("Status"),
+				Name: new("Status"),
 				Value: []*descriptorpb.EnumValueDescriptorProto{
-					{Name: ptr("STATUS_UNSPECIFIED"), Number: ptr(int32(0))},
+					{Name: new("STATUS_UNSPECIFIED"), Number: new(int32(0))},
 				},
 			},
 		},
 		Service: []*descriptorpb.ServiceDescriptorProto{
-			{Name: ptr("ZebraService")},
-			{Name: ptr("AppleService")},
+			{Name: new("ZebraService")},
+			{Name: new("AppleService")},
 		},
 		Extension: []*descriptorpb.FieldDescriptorProto{
 			{
-				Name:     ptr("my_ext"),
-				Number:   ptr(int32(1000)),
+				Name:     new("my_ext"),
+				Number:   new(int32(1000)),
 				Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
 				Type:     descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
-				Extendee: ptr(".test.Zebra"),
+				Extendee: new(".test.Zebra"),
 			},
 		},
 	}
@@ -187,19 +189,19 @@ func TestPackagesFromDocs_MultiplePackages(t *testing.T) {
 	// Two files in the same module, different packages — should produce two
 	// package entries sorted alphabetically.
 	fdp1 := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("z.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("z.pkg"),
+		Name:    new("z.proto"),
+		Syntax:  new("proto3"),
+		Package: new("z.pkg"),
 		MessageType: []*descriptorpb.DescriptorProto{
-			{Name: ptr("ZMsg")},
+			{Name: new("ZMsg")},
 		},
 	}
 	fdp2 := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("a.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("a.pkg"),
+		Name:    new("a.proto"),
+		Syntax:  new("proto3"),
+		Package: new("a.pkg"),
 		MessageType: []*descriptorpb.DescriptorProto{
-			{Name: ptr("AMsg")},
+			{Name: new("AMsg")},
 		},
 	}
 
@@ -220,11 +222,11 @@ func TestPackagesFromDocs_OwnPathFilter(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("dep.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("dep"),
+		Name:    new("dep.proto"),
+		Syntax:  new("proto3"),
+		Package: new("dep"),
 		MessageType: []*descriptorpb.DescriptorProto{
-			{Name: ptr("DepMessage")},
+			{Name: new("DepMessage")},
 		},
 	}
 
@@ -238,13 +240,13 @@ func TestPackagesFromDocs_SortsByFQN(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("fqn.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("z"),
+		Name:    new("fqn.proto"),
+		Syntax:  new("proto3"),
+		Package: new("z"),
 		MessageType: []*descriptorpb.DescriptorProto{
-			{Name: ptr("Apple")},  // FQN: z.Apple
-			{Name: ptr("Mango")},  // FQN: z.Mango
-			{Name: ptr("Banana")}, // FQN: z.Banana
+			{Name: new("Apple")},  // FQN: z.Apple
+			{Name: new("Mango")},  // FQN: z.Mango
+			{Name: new("Banana")}, // FQN: z.Banana
 		},
 	}
 
@@ -265,28 +267,28 @@ func TestIsDeprecated(t *testing.T) {
 
 	deprecated := true
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("deprecated.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("dep"),
+		Name:    new("deprecated.proto"),
+		Syntax:  new("proto3"),
+		Package: new("dep"),
 		MessageType: []*descriptorpb.DescriptorProto{
 			{
-				Name:    ptr("OldMessage"),
+				Name:    new("OldMessage"),
 				Options: &descriptorpb.MessageOptions{Deprecated: &deprecated},
 			},
-			{Name: ptr("NewMessage")},
+			{Name: new("NewMessage")},
 		},
 		EnumType: []*descriptorpb.EnumDescriptorProto{
 			{
-				Name:    ptr("OldEnum"),
+				Name:    new("OldEnum"),
 				Options: &descriptorpb.EnumOptions{Deprecated: &deprecated},
 				Value: []*descriptorpb.EnumValueDescriptorProto{
-					{Name: ptr("OLD_ENUM_UNSPECIFIED"), Number: ptr(int32(0))},
+					{Name: new("OLD_ENUM_UNSPECIFIED"), Number: new(int32(0))},
 				},
 			},
 		},
 		Service: []*descriptorpb.ServiceDescriptorProto{
 			{
-				Name:    ptr("OldService"),
+				Name:    new("OldService"),
 				Options: &descriptorpb.ServiceOptions{Deprecated: &deprecated},
 			},
 		},
@@ -314,23 +316,23 @@ func TestPackageDescription(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("desc.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("desc"),
+		Name:    new("desc.proto"),
+		Syntax:  new("proto3"),
+		Package: new("desc"),
 		MessageType: []*descriptorpb.DescriptorProto{
-			{Name: ptr("A")},
-			{Name: ptr("B")},
+			{Name: new("A")},
+			{Name: new("B")},
 		},
 		EnumType: []*descriptorpb.EnumDescriptorProto{
 			{
-				Name: ptr("E"),
+				Name: new("E"),
 				Value: []*descriptorpb.EnumValueDescriptorProto{
-					{Name: ptr("E_UNSPECIFIED"), Number: ptr(int32(0))},
+					{Name: new("E_UNSPECIFIED"), Number: new(int32(0))},
 				},
 			},
 		},
 		Service: []*descriptorpb.ServiceDescriptorProto{
-			{Name: ptr("Svc")},
+			{Name: new("Svc")},
 		},
 	}
 
@@ -352,37 +354,37 @@ func TestRenderMethod_IdempotencyAndDeprecation(t *testing.T) {
 	idempotent := descriptorpb.MethodOptions_IDEMPOTENT
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("svc.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("svc"),
+		Name:    new("svc.proto"),
+		Syntax:  new("proto3"),
+		Package: new("svc"),
 		MessageType: []*descriptorpb.DescriptorProto{
-			{Name: ptr("Req")},
-			{Name: ptr("Resp")},
+			{Name: new("Req")},
+			{Name: new("Resp")},
 		},
 		Service: []*descriptorpb.ServiceDescriptorProto{{
-			Name: ptr("Svc"),
+			Name: new("Svc"),
 			Method: []*descriptorpb.MethodDescriptorProto{
 				{
-					Name:       ptr("Plain"),
-					InputType:  ptr(".svc.Req"),
-					OutputType: ptr(".svc.Resp"),
+					Name:       new("Plain"),
+					InputType:  new(".svc.Req"),
+					OutputType: new(".svc.Resp"),
 				},
 				{
-					Name:       ptr("ReadOnly"),
-					InputType:  ptr(".svc.Req"),
-					OutputType: ptr(".svc.Resp"),
+					Name:       new("ReadOnly"),
+					InputType:  new(".svc.Req"),
+					OutputType: new(".svc.Resp"),
 					Options:    &descriptorpb.MethodOptions{IdempotencyLevel: &noSideEffects},
 				},
 				{
-					Name:       ptr("Idempotent"),
-					InputType:  ptr(".svc.Req"),
-					OutputType: ptr(".svc.Resp"),
+					Name:       new("Idempotent"),
+					InputType:  new(".svc.Req"),
+					OutputType: new(".svc.Resp"),
 					Options:    &descriptorpb.MethodOptions{IdempotencyLevel: &idempotent},
 				},
 				{
-					Name:       ptr("OldMethod"),
-					InputType:  ptr(".svc.Req"),
-					OutputType: ptr(".svc.Resp"),
+					Name:       new("OldMethod"),
+					InputType:  new(".svc.Req"),
+					OutputType: new(".svc.Resp"),
 					Options:    &descriptorpb.MethodOptions{Deprecated: &deprecated},
 				},
 			},
@@ -421,40 +423,40 @@ func TestFieldTypeName_Map(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("map.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("mypkg"),
+		Name:    new("map.proto"),
+		Syntax:  new("proto3"),
+		Package: new("mypkg"),
 		MessageType: []*descriptorpb.DescriptorProto{
-			{Name: ptr("Inner")},
+			{Name: new("Inner")},
 			{
-				Name: ptr("Outer"),
+				Name: new("Outer"),
 				Field: []*descriptorpb.FieldDescriptorProto{
 					// map<string, Inner> — proto encodes as a synthetic map entry message
 					{
-						Name:     ptr("my_map"),
-						Number:   ptr(int32(1)),
+						Name:     new("my_map"),
+						Number:   new(int32(1)),
 						Label:    descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(),
 						Type:     descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
-						TypeName: ptr(".mypkg.Outer.MyMapEntry"),
+						TypeName: new(".mypkg.Outer.MyMapEntry"),
 					},
 				},
 				NestedType: []*descriptorpb.DescriptorProto{
 					{
-						Name:    ptr("MyMapEntry"),
-						Options: &descriptorpb.MessageOptions{MapEntry: ptr(true)},
+						Name:    new("MyMapEntry"),
+						Options: &descriptorpb.MessageOptions{MapEntry: new(true)},
 						Field: []*descriptorpb.FieldDescriptorProto{
 							{
-								Name:   ptr("key"),
-								Number: ptr(int32(1)),
+								Name:   new("key"),
+								Number: new(int32(1)),
 								Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
 								Type:   descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
 							},
 							{
-								Name:     ptr("value"),
-								Number:   ptr(int32(2)),
+								Name:     new("value"),
+								Number:   new(int32(2)),
 								Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
 								Type:     descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
-								TypeName: ptr(".mypkg.Inner"),
+								TypeName: new(".mypkg.Inner"),
 							},
 						},
 					},
@@ -483,35 +485,35 @@ func TestFieldTypeName_CrossPackage(t *testing.T) {
 	// OtherMsg is in package "other"; Request is in package "svc" and
 	// references OtherMsg — the rendered type should be fully qualified.
 	dep := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("other.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("other"),
+		Name:    new("other.proto"),
+		Syntax:  new("proto3"),
+		Package: new("other"),
 		MessageType: []*descriptorpb.DescriptorProto{
-			{Name: ptr("OtherMsg")},
+			{Name: new("OtherMsg")},
 		},
 	}
 	main := &descriptorpb.FileDescriptorProto{
-		Name:       ptr("svc.proto"),
-		Syntax:     ptr("proto3"),
-		Package:    ptr("svc"),
+		Name:       new("svc.proto"),
+		Syntax:     new("proto3"),
+		Package:    new("svc"),
 		Dependency: []string{"other.proto"},
 		MessageType: []*descriptorpb.DescriptorProto{
 			{
-				Name: ptr("Request"),
+				Name: new("Request"),
 				Field: []*descriptorpb.FieldDescriptorProto{
 					{
-						Name:     ptr("other"),
-						Number:   ptr(int32(1)),
+						Name:     new("other"),
+						Number:   new(int32(1)),
 						Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
 						Type:     descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
-						TypeName: ptr(".other.OtherMsg"),
+						TypeName: new(".other.OtherMsg"),
 					},
 					{
-						Name:     ptr("same_pkg"),
-						Number:   ptr(int32(2)),
+						Name:     new("same_pkg"),
+						Number:   new(int32(2)),
 						Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
 						Type:     descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
-						TypeName: ptr(".svc.Request"),
+						TypeName: new(".svc.Request"),
 					},
 				},
 			},
@@ -544,18 +546,18 @@ func TestRenderPackage_Oneof(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("oneof.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("oneof"),
+		Name:    new("oneof.proto"),
+		Syntax:  new("proto3"),
+		Package: new("oneof"),
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("Msg"),
+			Name: new("Msg"),
 			Field: []*descriptorpb.FieldDescriptorProto{
-				{Name: ptr("standalone"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
-				{Name: ptr("choice_a"), Number: ptr(int32(2)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(), OneofIndex: ptr(int32(0))},
-				{Name: ptr("choice_b"), Number: ptr(int32(3)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(), OneofIndex: ptr(int32(0))},
+				{Name: new("standalone"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+				{Name: new("choice_a"), Number: new(int32(2)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(), OneofIndex: new(int32(0))},
+				{Name: new("choice_b"), Number: new(int32(3)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(), OneofIndex: new(int32(0))},
 			},
 			OneofDecl: []*descriptorpb.OneofDescriptorProto{
-				{Name: ptr("kind")},
+				{Name: new("kind")},
 			},
 		}},
 	}
@@ -578,17 +580,17 @@ func TestRenderPackage_Reserved(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("reserved.proto"),
-		Syntax:  ptr("proto2"),
-		Package: ptr("res"),
+		Name:    new("reserved.proto"),
+		Syntax:  new("proto2"),
+		Package: new("res"),
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("Msg"),
+			Name: new("Msg"),
 			Field: []*descriptorpb.FieldDescriptorProto{
-				{Name: ptr("active"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+				{Name: new("active"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
 			},
 			ReservedRange: []*descriptorpb.DescriptorProto_ReservedRange{
-				{Start: ptr(int32(2)), End: ptr(int32(5))},  // 2 to 4
-				{Start: ptr(int32(9)), End: ptr(int32(10))}, // single: 9
+				{Start: new(int32(2)), End: new(int32(5))},  // 2 to 4
+				{Start: new(int32(9)), End: new(int32(10))}, // single: 9
 			},
 			ReservedName: []string{"old_field", "legacy"},
 		}},
@@ -608,18 +610,18 @@ func TestRenderPackage_NestedMessages(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("nested.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("nest"),
+		Name:    new("nested.proto"),
+		Syntax:  new("proto3"),
+		Package: new("nest"),
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("Outer"),
+			Name: new("Outer"),
 			Field: []*descriptorpb.FieldDescriptorProto{
-				{Name: ptr("x"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+				{Name: new("x"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
 			},
 			NestedType: []*descriptorpb.DescriptorProto{{
-				Name: ptr("Inner"),
+				Name: new("Inner"),
 				Field: []*descriptorpb.FieldDescriptorProto{
-					{Name: ptr("y"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum()},
+					{Name: new("y"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum()},
 				},
 			}},
 		}},
@@ -647,12 +649,12 @@ func TestRenderPackage_Syntax(t *testing.T) {
 		t.Run(tc.syntax, func(t *testing.T) {
 			t.Parallel()
 			fdp := &descriptorpb.FileDescriptorProto{
-				Name:    ptr("syn.proto"),
-				Syntax:  ptr(tc.syntax),
-				Package: ptr("syn"),
+				Name:    new("syn.proto"),
+				Syntax:  new(tc.syntax),
+				Package: new("syn"),
 				MessageType: []*descriptorpb.DescriptorProto{
-					{Name: ptr("M"), Field: []*descriptorpb.FieldDescriptorProto{
-						{Name: ptr("f"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+					{Name: new("M"), Field: []*descriptorpb.FieldDescriptorProto{
+						{Name: new("f"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
 					}},
 				},
 			}
@@ -668,13 +670,13 @@ func TestRenderPackage_Edition(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("ed.proto"),
-		Syntax:  ptr("editions"),
+		Name:    new("ed.proto"),
+		Syntax:  new("editions"),
 		Edition: descriptorpb.Edition_EDITION_2023.Enum(),
-		Package: ptr("ed"),
+		Package: new("ed"),
 		MessageType: []*descriptorpb.DescriptorProto{
-			{Name: ptr("M"), Field: []*descriptorpb.FieldDescriptorProto{
-				{Name: ptr("f"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+			{Name: new("M"), Field: []*descriptorpb.FieldDescriptorProto{
+				{Name: new("f"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
 			}},
 		},
 	}
@@ -691,14 +693,14 @@ func TestRenderPackage_RequiredField(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("req.proto"),
-		Syntax:  ptr("proto2"),
-		Package: ptr("req"),
+		Name:    new("req.proto"),
+		Syntax:  new("proto2"),
+		Package: new("req"),
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("M"),
+			Name: new("M"),
 			Field: []*descriptorpb.FieldDescriptorProto{
-				{Name: ptr("must_have"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_REQUIRED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
-				{Name: ptr("optional_field"), Number: ptr(int32(2)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+				{Name: new("must_have"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_REQUIRED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+				{Name: new("optional_field"), Number: new(int32(2)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
 			},
 		}},
 	}
@@ -722,19 +724,19 @@ func TestRenderPackage_NestedEnum(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("nestedenum.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("ne"),
+		Name:    new("nestedenum.proto"),
+		Syntax:  new("proto3"),
+		Package: new("ne"),
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("Outer"),
+			Name: new("Outer"),
 			Field: []*descriptorpb.FieldDescriptorProto{
-				{Name: ptr("x"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+				{Name: new("x"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
 			},
 			EnumType: []*descriptorpb.EnumDescriptorProto{{
-				Name: ptr("Status"),
+				Name: new("Status"),
 				Value: []*descriptorpb.EnumValueDescriptorProto{
-					{Name: ptr("STATUS_UNSPECIFIED"), Number: ptr(int32(0))},
-					{Name: ptr("STATUS_ACTIVE"), Number: ptr(int32(1))},
+					{Name: new("STATUS_UNSPECIFIED"), Number: new(int32(0))},
+					{Name: new("STATUS_ACTIVE"), Number: new(int32(1))},
 				},
 			}},
 		}},
@@ -755,17 +757,17 @@ func TestRenderPackage_ExtensionRanges(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("extrange.proto"),
-		Syntax:  ptr("proto2"),
-		Package: ptr("er"),
+		Name:    new("extrange.proto"),
+		Syntax:  new("proto2"),
+		Package: new("er"),
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("M"),
+			Name: new("M"),
 			Field: []*descriptorpb.FieldDescriptorProto{
-				{Name: ptr("active"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+				{Name: new("active"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
 			},
 			ExtensionRange: []*descriptorpb.DescriptorProto_ExtensionRange{
-				{Start: ptr(int32(100)), End: ptr(int32(150))},        // 100 to 149
-				{Start: ptr(int32(1000)), End: ptr(int32(536870912))}, // 1000 to max
+				{Start: new(int32(100)), End: new(int32(150))},        // 100 to 149
+				{Start: new(int32(1000)), End: new(int32(536870912))}, // 1000 to max
 			},
 		}},
 	}
@@ -782,22 +784,22 @@ func TestRenderPackage_Extension(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("ext.proto"),
-		Syntax:  ptr("proto2"),
-		Package: ptr("ext"),
+		Name:    new("ext.proto"),
+		Syntax:  new("proto2"),
+		Package: new("ext"),
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("Base"),
+			Name: new("Base"),
 			ExtensionRange: []*descriptorpb.DescriptorProto_ExtensionRange{
-				{Start: ptr(int32(100)), End: ptr(int32(200))},
+				{Start: new(int32(100)), End: new(int32(200))},
 			},
 		}},
 		Extension: []*descriptorpb.FieldDescriptorProto{
 			{
-				Name:     ptr("repeated_ext"),
-				Number:   ptr(int32(100)),
+				Name:     new("repeated_ext"),
+				Number:   new(int32(100)),
 				Label:    descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(),
 				Type:     descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
-				Extendee: ptr(".ext.Base"),
+				Extendee: new(".ext.Base"),
 			},
 		},
 	}
@@ -815,25 +817,25 @@ func TestRenderPackage_NestedExtension(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("nestedext.proto"),
-		Syntax:  ptr("proto2"),
-		Package: ptr("nx"),
+		Name:    new("nestedext.proto"),
+		Syntax:  new("proto2"),
+		Package: new("nx"),
 		MessageType: []*descriptorpb.DescriptorProto{
 			{
-				Name: ptr("Base"),
+				Name: new("Base"),
 				ExtensionRange: []*descriptorpb.DescriptorProto_ExtensionRange{
-					{Start: ptr(int32(100)), End: ptr(int32(200))},
+					{Start: new(int32(100)), End: new(int32(200))},
 				},
 			},
 			{
-				Name: ptr("Holder"),
+				Name: new("Holder"),
 				Extension: []*descriptorpb.FieldDescriptorProto{
 					{
-						Name:     ptr("held_ext"),
-						Number:   ptr(int32(100)),
+						Name:     new("held_ext"),
+						Number:   new(int32(100)),
 						Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
 						Type:     descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
-						Extendee: ptr(".nx.Base"),
+						Extendee: new(".nx.Base"),
 					},
 				},
 			},
@@ -884,7 +886,7 @@ func TestCustomOptionsAnnotation_NoOptions(t *testing.T) {
 func TestCustomOptionsAnnotation_ExcludesStandardFields(t *testing.T) {
 	t.Parallel()
 
-	opts := &descriptorpb.FieldOptions{Deprecated: ptr(true)}
+	opts := &descriptorpb.FieldOptions{Deprecated: new(true)}
 	got := customOptionsAnnotation(opts)
 	attest.Equal(t, got, "", attest.Sprintf("standard (non-extension) fields should not appear: %q", got))
 }
@@ -899,7 +901,7 @@ func TestRenderPackage_CustomOptions(t *testing.T) {
 	enumValueExt := buildExtensionType(t, ".google.protobuf.EnumValueOptions", "value_tag", 50005, descriptorpb.FieldDescriptorProto_TYPE_STRING, "")
 	serviceExt := buildExtensionType(t, ".google.protobuf.ServiceOptions", "service_tag", 50006, descriptorpb.FieldDescriptorProto_TYPE_STRING, "")
 
-	fieldOpts := &descriptorpb.FieldOptions{Deprecated: ptr(true)}
+	fieldOpts := &descriptorpb.FieldOptions{Deprecated: new(true)}
 	proto.SetExtension(fieldOpts, fieldExt, int32(1))
 
 	msgOpts := &descriptorpb.MessageOptions{}
@@ -918,33 +920,33 @@ func TestRenderPackage_CustomOptions(t *testing.T) {
 	proto.SetExtension(serviceOpts, serviceExt, "widget-api")
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("custom.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("custom"),
+		Name:    new("custom.proto"),
+		Syntax:  new("proto3"),
+		Package: new("custom"),
 		MessageType: []*descriptorpb.DescriptorProto{
 			{
-				Name:    ptr("Widget"),
+				Name:    new("Widget"),
 				Options: msgOpts,
 				Field: []*descriptorpb.FieldDescriptorProto{
-					{Name: ptr("count"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(), Options: fieldOpts},
+					{Name: new("count"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(), Options: fieldOpts},
 				},
 			},
-			{Name: ptr("Empty")},
+			{Name: new("Empty")},
 		},
 		EnumType: []*descriptorpb.EnumDescriptorProto{{
-			Name:    ptr("Status"),
+			Name:    new("Status"),
 			Options: enumOpts,
 			Value: []*descriptorpb.EnumValueDescriptorProto{
-				{Name: ptr("STATUS_UNSPECIFIED"), Number: ptr(int32(0)), Options: enumValueOpts},
+				{Name: new("STATUS_UNSPECIFIED"), Number: new(int32(0)), Options: enumValueOpts},
 			},
 		}},
 		Service: []*descriptorpb.ServiceDescriptorProto{{
-			Name:    ptr("WidgetService"),
+			Name:    new("WidgetService"),
 			Options: serviceOpts,
 			Method: []*descriptorpb.MethodDescriptorProto{{
-				Name:       ptr("GetWidget"),
-				InputType:  ptr(".custom.Empty"),
-				OutputType: ptr(".custom.Widget"),
+				Name:       new("GetWidget"),
+				InputType:  new(".custom.Empty"),
+				OutputType: new(".custom.Widget"),
 				Options:    methodOpts,
 			}},
 		}},
@@ -970,24 +972,24 @@ func TestRenderField_DefaultValue(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("def.proto"),
-		Syntax:  ptr("proto2"),
-		Package: ptr("def"),
+		Name:    new("def.proto"),
+		Syntax:  new("proto2"),
+		Package: new("def"),
 		EnumType: []*descriptorpb.EnumDescriptorProto{{
-			Name: ptr("Color"),
+			Name: new("Color"),
 			Value: []*descriptorpb.EnumValueDescriptorProto{
-				{Name: ptr("RED"), Number: ptr(int32(0))},
-				{Name: ptr("BLUE"), Number: ptr(int32(1))},
+				{Name: new("RED"), Number: new(int32(0))},
+				{Name: new("BLUE"), Number: new(int32(1))},
 			},
 		}},
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("M"),
+			Name: new("M"),
 			Field: []*descriptorpb.FieldDescriptorProto{
-				{Name: ptr("label"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(), DefaultValue: ptr("hello")},
-				{Name: ptr("count"), Number: ptr(int32(2)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(), DefaultValue: ptr("42")},
-				{Name: ptr("active"), Number: ptr(int32(3)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_BOOL.Enum(), DefaultValue: ptr("true")},
-				{Name: ptr("color"), Number: ptr(int32(4)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_ENUM.Enum(), TypeName: ptr(".def.Color"), DefaultValue: ptr("BLUE")},
-				{Name: ptr("plain"), Number: ptr(int32(5)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+				{Name: new("label"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(), DefaultValue: new("hello")},
+				{Name: new("count"), Number: new(int32(2)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(), DefaultValue: new("42")},
+				{Name: new("active"), Number: new(int32(3)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_BOOL.Enum(), DefaultValue: new("true")},
+				{Name: new("color"), Number: new(int32(4)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_ENUM.Enum(), TypeName: new(".def.Color"), DefaultValue: new("BLUE")},
+				{Name: new("plain"), Number: new(int32(5)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
 			},
 		}},
 	}
@@ -1007,20 +1009,20 @@ func TestRenderField_JSONNameOverride(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("j.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("j"),
+		Name:    new("j.proto"),
+		Syntax:  new("proto3"),
+		Package: new("j"),
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("M"),
+			Name: new("M"),
 			Field: []*descriptorpb.FieldDescriptorProto{
 				// No explicit json_name -- protodesc derives "myField".
-				{Name: ptr("my_field"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+				{Name: new("my_field"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
 				// Explicit json_name that genuinely differs from the derived name.
-				{Name: ptr("other_field"), Number: ptr(int32(2)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(), JsonName: ptr("customName")},
+				{Name: new("other_field"), Number: new(int32(2)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(), JsonName: new("customName")},
 				// Real compilers always populate json_name, even when the user
 				// didn't write an override -- this one happens to match the
 				// derived name and should NOT be flagged as an override.
-				{Name: ptr("same_as_derived"), Number: ptr(int32(3)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(), JsonName: ptr("sameAsDerived")},
+				{Name: new("same_as_derived"), Number: new(int32(3)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(), JsonName: new("sameAsDerived")},
 			},
 		}},
 	}
@@ -1037,17 +1039,17 @@ func TestRenderField_ExplicitPacked(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("packed.proto"),
-		Syntax:  ptr("proto2"),
-		Package: ptr("packed"),
+		Name:    new("packed.proto"),
+		Syntax:  new("proto2"),
+		Package: new("packed"),
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("M"),
+			Name: new("M"),
 			Field: []*descriptorpb.FieldDescriptorProto{
 				// No explicit packed option -- should not be annotated even
 				// though IsPacked() has a well-defined effective value.
-				{Name: ptr("no_opt"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum()},
-				{Name: ptr("explicit_true"), Number: ptr(int32(2)), Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(), Options: &descriptorpb.FieldOptions{Packed: ptr(true)}},
-				{Name: ptr("explicit_false"), Number: ptr(int32(3)), Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(), Options: &descriptorpb.FieldOptions{Packed: ptr(false)}},
+				{Name: new("no_opt"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum()},
+				{Name: new("explicit_true"), Number: new(int32(2)), Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(), Options: &descriptorpb.FieldOptions{Packed: new(true)}},
+				{Name: new("explicit_false"), Number: new(int32(3)), Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(), Options: &descriptorpb.FieldOptions{Packed: new(false)}},
 			},
 		}},
 	}
@@ -1065,14 +1067,14 @@ func TestRenderField_DebugRedact(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("redact.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("redact"),
+		Name:    new("redact.proto"),
+		Syntax:  new("proto3"),
+		Package: new("redact"),
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("M"),
+			Name: new("M"),
 			Field: []*descriptorpb.FieldDescriptorProto{
-				{Name: ptr("plain"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
-				{Name: ptr("password"), Number: ptr(int32(2)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(), Options: &descriptorpb.FieldOptions{DebugRedact: ptr(true)}},
+				{Name: new("plain"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+				{Name: new("password"), Number: new(int32(2)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(), Options: &descriptorpb.FieldOptions{DebugRedact: new(true)}},
 			},
 		}},
 	}
@@ -1089,16 +1091,16 @@ func TestRenderPackage_EnumAlias(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("alias.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("alias"),
+		Name:    new("alias.proto"),
+		Syntax:  new("proto3"),
+		Package: new("alias"),
 		EnumType: []*descriptorpb.EnumDescriptorProto{{
-			Name:    ptr("Color"),
-			Options: &descriptorpb.EnumOptions{AllowAlias: ptr(true)},
+			Name:    new("Color"),
+			Options: &descriptorpb.EnumOptions{AllowAlias: new(true)},
 			Value: []*descriptorpb.EnumValueDescriptorProto{
-				{Name: ptr("RED"), Number: ptr(int32(0))},
-				{Name: ptr("CRIMSON"), Number: ptr(int32(0))}, // alias of RED
-				{Name: ptr("BLUE"), Number: ptr(int32(1))},
+				{Name: new("RED"), Number: new(int32(0))},
+				{Name: new("CRIMSON"), Number: new(int32(0))}, // alias of RED
+				{Name: new("BLUE"), Number: new(int32(1))},
 			},
 		}},
 	}
@@ -1117,17 +1119,17 @@ func TestRenderPackage_NestedEnumAlias(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("nestedalias.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("na"),
+		Name:    new("nestedalias.proto"),
+		Syntax:  new("proto3"),
+		Package: new("na"),
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("Outer"),
+			Name: new("Outer"),
 			EnumType: []*descriptorpb.EnumDescriptorProto{{
-				Name:    ptr("Color"),
-				Options: &descriptorpb.EnumOptions{AllowAlias: ptr(true)},
+				Name:    new("Color"),
+				Options: &descriptorpb.EnumOptions{AllowAlias: new(true)},
 				Value: []*descriptorpb.EnumValueDescriptorProto{
-					{Name: ptr("RED"), Number: ptr(int32(0))},
-					{Name: ptr("CRIMSON"), Number: ptr(int32(0))},
+					{Name: new("RED"), Number: new(int32(0))},
+					{Name: new("CRIMSON"), Number: new(int32(0))},
 				},
 			}},
 		}},
@@ -1144,26 +1146,26 @@ func TestRenderField_Group(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("group.proto"),
-		Syntax:  ptr("proto2"),
-		Package: ptr("grp"),
+		Name:    new("group.proto"),
+		Syntax:  new("proto2"),
+		Package: new("grp"),
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("M"),
+			Name: new("M"),
 			Field: []*descriptorpb.FieldDescriptorProto{
-				{Name: ptr("result"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_GROUP.Enum(), TypeName: ptr(".grp.M.Result")},
-				{Name: ptr("results"), Number: ptr(int32(2)), Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_GROUP.Enum(), TypeName: ptr(".grp.M.Results")},
+				{Name: new("result"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_GROUP.Enum(), TypeName: new(".grp.M.Result")},
+				{Name: new("results"), Number: new(int32(2)), Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_GROUP.Enum(), TypeName: new(".grp.M.Results")},
 			},
 			NestedType: []*descriptorpb.DescriptorProto{
 				{
-					Name: ptr("Result"),
+					Name: new("Result"),
 					Field: []*descriptorpb.FieldDescriptorProto{
-						{Name: ptr("url"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+						{Name: new("url"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
 					},
 				},
 				{
-					Name: ptr("Results"),
+					Name: new("Results"),
 					Field: []*descriptorpb.FieldDescriptorProto{
-						{Name: ptr("url"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+						{Name: new("url"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
 					},
 				},
 			},
@@ -1186,16 +1188,16 @@ func TestRenderPackage_Proto3OptionalField(t *testing.T) {
 	// containing just that one field -- this must not leak into the docs
 	// as a visible oneof block.
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("opt.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("opt"),
+		Name:    new("opt.proto"),
+		Syntax:  new("proto3"),
+		Package: new("opt"),
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("M"),
+			Name: new("M"),
 			Field: []*descriptorpb.FieldDescriptorProto{
-				{Name: ptr("name"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(), Proto3Optional: ptr(true), OneofIndex: ptr(int32(0))},
+				{Name: new("name"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(), Proto3Optional: new(true), OneofIndex: new(int32(0))},
 			},
 			OneofDecl: []*descriptorpb.OneofDescriptorProto{
-				{Name: ptr("_name")},
+				{Name: new("_name")},
 			},
 		}},
 	}
@@ -1214,17 +1216,17 @@ func TestRenderPackage_EnumReserved(t *testing.T) {
 	t.Parallel()
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("enumres.proto"),
-		Syntax:  ptr("proto3"),
-		Package: ptr("enumres"),
+		Name:    new("enumres.proto"),
+		Syntax:  new("proto3"),
+		Package: new("enumres"),
 		EnumType: []*descriptorpb.EnumDescriptorProto{{
-			Name: ptr("Status"),
+			Name: new("Status"),
 			Value: []*descriptorpb.EnumValueDescriptorProto{
-				{Name: ptr("STATUS_UNSPECIFIED"), Number: ptr(int32(0))},
+				{Name: new("STATUS_UNSPECIFIED"), Number: new(int32(0))},
 			},
 			ReservedRange: []*descriptorpb.EnumDescriptorProto_EnumReservedRange{
-				{Start: ptr(int32(5)), End: ptr(int32(10))},  // inclusive: 5 to 10
-				{Start: ptr(int32(20)), End: ptr(int32(20))}, // single: 20
+				{Start: new(int32(5)), End: new(int32(10))},  // inclusive: 5 to 10
+				{Start: new(int32(20)), End: new(int32(20))}, // single: 20
 			},
 			ReservedName: []string{"OLD_STATUS", "LEGACY"},
 		}},
@@ -1248,13 +1250,13 @@ func TestRenderPackage_ExtensionRangeCustomOption(t *testing.T) {
 	proto.SetExtension(rangeOpts, rangeExt, "team-foo")
 
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:    ptr("extrangeopt.proto"),
-		Syntax:  ptr("proto2"),
-		Package: ptr("ero"),
+		Name:    new("extrangeopt.proto"),
+		Syntax:  new("proto2"),
+		Package: new("ero"),
 		MessageType: []*descriptorpb.DescriptorProto{{
-			Name: ptr("M"),
+			Name: new("M"),
 			ExtensionRange: []*descriptorpb.DescriptorProto_ExtensionRange{
-				{Start: ptr(int32(100)), End: ptr(int32(200)), Options: rangeOpts},
+				{Start: new(int32(100)), End: new(int32(200)), Options: rangeOpts},
 			},
 		}},
 	}
@@ -1281,12 +1283,12 @@ func TestRenderPackage_ClosedEnum(t *testing.T) {
 		t.Run(tc.syntax, func(t *testing.T) {
 			t.Parallel()
 			fdp := &descriptorpb.FileDescriptorProto{
-				Name:    ptr("closed.proto"),
-				Syntax:  ptr(tc.syntax),
-				Package: ptr("closed"),
+				Name:    new("closed.proto"),
+				Syntax:  new(tc.syntax),
+				Package: new("closed"),
 				EnumType: []*descriptorpb.EnumDescriptorProto{{
-					Name:  ptr("E"),
-					Value: []*descriptorpb.EnumValueDescriptorProto{{Name: ptr("E_UNSPECIFIED"), Number: ptr(int32(0))}},
+					Name:  new("E"),
+					Value: []*descriptorpb.EnumValueDescriptorProto{{Name: new("E_UNSPECIFIED"), Number: new(int32(0))}},
 				}},
 			}
 			files := buildTestRegistry(t, fdp)
@@ -1306,17 +1308,17 @@ func TestRenderField_ExtensionJSONNameNotFlagged(t *testing.T) {
 	// author-written override and shouldn't be flagged as one.
 	descProtoFDP := protodesc.ToFileDescriptorProto((&descriptorpb.FileOptions{}).ProtoReflect().Descriptor().ParentFile())
 	fdp := &descriptorpb.FileDescriptorProto{
-		Name:       ptr("extjson.proto"),
-		Syntax:     ptr("proto2"),
-		Package:    ptr("extjson"),
+		Name:       new("extjson.proto"),
+		Syntax:     new("proto2"),
+		Package:    new("extjson"),
 		Dependency: []string{"google/protobuf/descriptor.proto"},
 		Extension: []*descriptorpb.FieldDescriptorProto{
 			{
-				Name:     ptr("my_ext"),
-				Number:   ptr(int32(50001)),
+				Name:     new("my_ext"),
+				Number:   new(int32(50001)),
 				Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
 				Type:     descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
-				Extendee: ptr(".google.protobuf.FieldOptions"),
+				Extendee: new(".google.protobuf.FieldOptions"),
 			},
 		},
 	}
