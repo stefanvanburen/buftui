@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/dynamicpb"
 )
 
 const pageSize = 250
@@ -278,6 +279,7 @@ func (c *client) fetchModuleSuggestions(owner string) tea.Cmd {
 		return navigateSuggestionsMsg(suggestions)
 	}
 }
+
 // compileDocs fetches transitive dependencies via the graph service, downloads
 // their proto files, and compiles everything using the experimental incremental
 // compiler from protocompile.
@@ -369,18 +371,44 @@ func (c *client) compileDocs(commitID string, currentFiles []*modulev1.File) tea
 		if err != nil {
 			return errMsg{fmt.Errorf("generating file descriptors: %w", err)}
 		}
-		var fds descriptorpb.FileDescriptorSet
-		if err := proto.Unmarshal(fdsBytes, &fds); err != nil {
-			return errMsg{fmt.Errorf("unmarshalling file descriptors: %w", err)}
-		}
-
-		// 8. Build a registry; WKT deps are resolved from the global registry.
-		regFiles, err := protodesc.NewFiles(&fds)
+		// 8. Build a registry, re-resolving custom options against the
+		// descriptor set's own extension declarations along the way.
+		regFiles, err := resolveRegistry(fdsBytes)
 		if err != nil {
-			return errMsg{fmt.Errorf("building file registry: %w", err)}
+			return errMsg{err}
 		}
 		return docsMsg(regFiles)
 	}
+}
+
+// resolveRegistry builds a *protoregistry.Files from a marshaled
+// FileDescriptorSet, re-resolving custom options (e.g. google.api.http,
+// buf.validate.field) against the descriptor set's own extension
+// declarations. A plain proto.Unmarshal only resolves extensions whose Go
+// package happens to be statically linked into this binary; since buftui
+// browses arbitrary third-party schemas, most custom options would
+// otherwise be silently dropped into unknown fields and never render.
+func resolveRegistry(fdsBytes []byte) (*protoregistry.Files, error) {
+	var fds descriptorpb.FileDescriptorSet
+	if err := proto.Unmarshal(fdsBytes, &fds); err != nil {
+		return nil, fmt.Errorf("unmarshalling file descriptors: %w", err)
+	}
+	// WKT deps are resolved from the global registry.
+	regFiles, err := protodesc.NewFiles(&fds)
+	if err != nil {
+		return nil, fmt.Errorf("building file registry: %w", err)
+	}
+
+	var resolvedFDS descriptorpb.FileDescriptorSet
+	unmarshalOpts := proto.UnmarshalOptions{Resolver: dynamicpb.NewTypes(regFiles)}
+	if err := unmarshalOpts.Unmarshal(fdsBytes, &resolvedFDS); err != nil {
+		return nil, fmt.Errorf("resolving custom options: %w", err)
+	}
+	resolvedFiles, err := protodesc.NewFiles(&resolvedFDS)
+	if err != nil {
+		return nil, fmt.Errorf("building file registry with resolved options: %w", err)
+	}
+	return resolvedFiles, nil
 }
 
 // newAuthInterceptor creates a client-only interceptor for adding authentication to requests.

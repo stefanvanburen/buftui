@@ -4,9 +4,13 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/lipgloss/v2"
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
@@ -17,6 +21,8 @@ import (
 // it renders the full entity docs in the viewport on the right.
 type docsPackage struct {
 	name       string
+	syntax     string
+	edition    string
 	services   []protoreflect.ServiceDescriptor
 	messages   []protoreflect.MessageDescriptor
 	enums      []protoreflect.EnumDescriptor
@@ -42,6 +48,34 @@ func (p *docsPackage) Description() string {
 	return strings.Join(parts, " · ")
 }
 
+// editionString returns the edition label as it appears in proto source
+// (e.g. "2023" for EDITION_2023).
+func editionString(e descriptorpb.Edition) string {
+	return strings.TrimPrefix(e.String(), "EDITION_")
+}
+
+// derivedJSONName computes the default JSON name for a proto field name
+// (snake_case -> camelCase), matching the protobuf compiler's algorithm.
+// Compilers always populate FieldDescriptorProto.json_name, whether or not
+// the .proto source contained an explicit override, so comparing against
+// this derivation is the only reliable way to detect a genuine override.
+func derivedJSONName(name string) string {
+	var b strings.Builder
+	capNext := false
+	for _, r := range name {
+		switch {
+		case r == '_':
+			capNext = true
+		case capNext:
+			b.WriteRune(unicode.ToUpper(r))
+			capNext = false
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 func plural(n int) string {
 	if n == 1 {
 		return ""
@@ -61,7 +95,13 @@ func packagesFromDocs(files *protoregistry.Files, ownPaths map[string]bool) []li
 		}
 		pkg := string(fd.Package())
 		if _, ok := byPkg[pkg]; !ok {
-			byPkg[pkg] = &docsPackage{name: pkg}
+			p := &docsPackage{name: pkg}
+			if fd.Syntax() == protoreflect.Editions {
+				p.edition = editionString(protodesc.ToFileDescriptorProto(fd).GetEdition())
+			} else {
+				p.syntax = fd.Syntax().String()
+			}
+			byPkg[pkg] = p
 		}
 		p := byPkg[pkg]
 		for i := range fd.Services().Len() {
@@ -127,15 +167,26 @@ func renderPackage(p *docsPackage, isDark bool) string {
 		}
 	}
 
-	deprecated := func(d protoreflect.Descriptor) string {
+	annotate := func(d protoreflect.Descriptor) string {
+		var s string
 		if isDeprecated(d) {
-			return "  " + deprecatedStyle.Render("[deprecated]")
+			s += "  " + deprecatedStyle.Render("[deprecated]")
 		}
-		return ""
+		if custom := customOptionsAnnotation(d.Options()); custom != "" {
+			s += "  " + dimStyle.Render(custom)
+		}
+		return s
+	}
+
+	switch {
+	case p.edition != "":
+		b.WriteString(dimStyle.Render(fmt.Sprintf("edition = %q;", p.edition)) + "\n")
+	case p.syntax != "":
+		b.WriteString(dimStyle.Render(fmt.Sprintf("syntax = %q;", p.syntax)) + "\n")
 	}
 
 	for _, svc := range p.services {
-		rule(string(svc.Name()) + deprecated(svc))
+		rule(string(svc.Name()) + annotate(svc))
 		writeComment(svc)
 		b.WriteString("\n")
 		for i := range svc.Methods().Len() {
@@ -146,40 +197,157 @@ func renderPackage(p *docsPackage, isDark bool) string {
 	}
 
 	for _, msg := range p.messages {
-		rule(string(msg.Name()) + deprecated(msg))
+		rule(string(msg.Name()) + annotate(msg))
 		writeComment(msg)
 		b.WriteString("\n")
-		for i := range msg.Fields().Len() {
-			b.WriteString(renderField(msg.Fields().Get(i), typeStyle, dimStyle, commentStyle))
-		}
+		renderMessageFields(&b, msg, typeStyle, dimStyle, commentStyle)
 		b.WriteString("\n")
+		// Nested enum types, shown as subsections with dotted path.
+		renderNestedEnums(&b, msg, string(msg.Name()), dimStyle, commentStyle, nameStyle, ruleStyle, annotate, writeComment)
+		// Nested extend blocks, declared directly inside this message.
+		renderNestedExtensions(&b, msg, typeStyle, dimStyle, commentStyle)
+		// Nested message types, shown as subsections with dotted path.
+		renderNestedMessages(&b, msg, string(msg.Name()), typeStyle, dimStyle, commentStyle, nameStyle, ruleStyle, annotate, writeComment)
 	}
 
 	for _, enum := range p.enums {
-		rule(string(enum.Name()) + deprecated(enum))
+		rule(string(enum.Name()) + annotate(enum))
 		writeComment(enum)
 		b.WriteString("\n")
 		for i := range enum.Values().Len() {
-			b.WriteString(renderEnumValue(enum.Values().Get(i), dimStyle, commentStyle))
+			v := enum.Values().Get(i)
+			b.WriteString(renderEnumValue(v, enumValueAliasOf(enum, v), dimStyle, commentStyle))
 		}
 		b.WriteString("\n")
 	}
 
 	for _, ext := range p.extensions {
-		rule(string(ext.Name()) + deprecated(ext))
+		rule(string(ext.Name()) + annotate(ext))
 		writeComment(ext)
 		b.WriteString("\n")
 		b.WriteString(dimStyle.Render(fmt.Sprintf("extend %s {", ext.ContainingMessage().FullName())) + "\n")
-		typeName := fieldTypeName(ext)
-		b.WriteString(fmt.Sprintf("  %s %s = %d;\n",
-			typeStyle.Render(typeName),
-			string(ext.Name()),
-			ext.Number(),
-		))
+		b.WriteString("  " + renderField(ext, typeStyle, dimStyle, commentStyle))
 		b.WriteString(dimStyle.Render("}") + "\n\n")
 	}
 
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// renderMessageFields renders a message's own fields, oneof blocks, reserved
+// ranges/names, and extension ranges — everything about the message except
+// its nested types.
+func renderMessageFields(b *strings.Builder, msg protoreflect.MessageDescriptor, typeStyle, dimStyle, commentStyle lipgloss.Style) {
+	// Non-oneof fields first.
+	for i := range msg.Fields().Len() {
+		f := msg.Fields().Get(i)
+		if f.ContainingOneof() == nil {
+			b.WriteString(renderField(f, typeStyle, dimStyle, commentStyle))
+		}
+	}
+	// Oneof blocks.
+	for i := range msg.Oneofs().Len() {
+		oneof := msg.Oneofs().Get(i)
+		if c := leadingComment(oneof); c != "" {
+			for _, l := range strings.Split(c, "\n") {
+				b.WriteString(commentStyle.Render(l) + "\n")
+			}
+		}
+		header := fmt.Sprintf("oneof %s {", oneof.Name())
+		if custom := customOptionsAnnotation(oneof.Options()); custom != "" {
+			header += "  " + custom
+		}
+		b.WriteString(dimStyle.Render(header) + "\n")
+		for j := range oneof.Fields().Len() {
+			b.WriteString("  " + renderField(oneof.Fields().Get(j), typeStyle, dimStyle, commentStyle))
+		}
+		b.WriteString(dimStyle.Render("}") + "\n")
+	}
+	renderRanges(b, "reserved", msg.ReservedRanges(), dimStyle)
+	for i := range msg.ReservedNames().Len() {
+		b.WriteString(dimStyle.Render(fmt.Sprintf("reserved %q;", msg.ReservedNames().Get(i))) + "\n")
+	}
+	// Extension ranges — field numbers reserved for third-party extensions.
+	renderRanges(b, "extensions", msg.ExtensionRanges(), dimStyle)
+}
+
+// renderRanges renders field-number ranges, used for both "reserved" and
+// "extensions" declarations, collapsing to "N;", "N to M;", or "N to max;".
+func renderRanges(b *strings.Builder, keyword string, ranges protoreflect.FieldRanges, dimStyle lipgloss.Style) {
+	for i := range ranges.Len() {
+		r := ranges.Get(i)
+		lo, hi := int(r[0]), int(r[1])-1
+		switch {
+		case protowire.Number(hi) == protowire.MaxValidNumber:
+			b.WriteString(dimStyle.Render(fmt.Sprintf("%s %d to max;", keyword, lo)) + "\n")
+		case lo == hi:
+			b.WriteString(dimStyle.Render(fmt.Sprintf("%s %d;", keyword, lo)) + "\n")
+		default:
+			b.WriteString(dimStyle.Render(fmt.Sprintf("%s %d to %d;", keyword, lo, hi)) + "\n")
+		}
+	}
+}
+
+// renderNestedEnums renders enum types declared directly inside msg as
+// subsections with a dotted path prefix (e.g. "Outer.Status").
+func renderNestedEnums(
+	b *strings.Builder,
+	msg protoreflect.MessageDescriptor,
+	path string,
+	dimStyle, commentStyle, nameStyle, ruleStyle lipgloss.Style,
+	annotateFn func(protoreflect.Descriptor) string,
+	writeCommentFn func(protoreflect.Descriptor),
+) {
+	for i := range msg.Enums().Len() {
+		enum := msg.Enums().Get(i)
+		subPath := path + "." + string(enum.Name())
+		b.WriteString("\n" + nameStyle.Render(subPath+annotateFn(enum)) + "\n")
+		b.WriteString(ruleStyle.Render(strings.Repeat("─", len(subPath))) + "\n")
+		writeCommentFn(enum)
+		b.WriteString("\n")
+		for j := range enum.Values().Len() {
+			v := enum.Values().Get(j)
+			b.WriteString(renderEnumValue(v, enumValueAliasOf(enum, v), dimStyle, commentStyle))
+		}
+		b.WriteString("\n")
+	}
+}
+
+// renderNestedExtensions renders extend blocks declared directly inside msg.
+func renderNestedExtensions(b *strings.Builder, msg protoreflect.MessageDescriptor, typeStyle, dimStyle, commentStyle lipgloss.Style) {
+	for i := range msg.Extensions().Len() {
+		ext := msg.Extensions().Get(i)
+		b.WriteString(dimStyle.Render(fmt.Sprintf("extend %s {", ext.ContainingMessage().FullName())) + "\n")
+		b.WriteString("  " + renderField(ext, typeStyle, dimStyle, commentStyle))
+		b.WriteString(dimStyle.Render("}") + "\n\n")
+	}
+}
+
+// renderNestedMessages recursively renders nested message types as subsections
+// with a dotted path prefix (e.g. "Outer.Inner").
+func renderNestedMessages(
+	b *strings.Builder,
+	msg protoreflect.MessageDescriptor,
+	path string,
+	typeStyle, dimStyle, commentStyle, nameStyle, ruleStyle lipgloss.Style,
+	annotateFn func(protoreflect.Descriptor) string,
+	writeCommentFn func(protoreflect.Descriptor),
+) {
+	for i := range msg.Messages().Len() {
+		nested := msg.Messages().Get(i)
+		if nested.IsMapEntry() {
+			continue // synthetic map entry — not a real nested type
+		}
+		subPath := path + "." + string(nested.Name())
+		b.WriteString("\n" + nameStyle.Render(subPath+annotateFn(nested)) + "\n")
+		b.WriteString(ruleStyle.Render(strings.Repeat("─", len(subPath))) + "\n")
+		writeCommentFn(nested)
+		b.WriteString("\n")
+		renderMessageFields(b, nested, typeStyle, dimStyle, commentStyle)
+		b.WriteString("\n")
+		renderNestedEnums(b, nested, subPath, dimStyle, commentStyle, nameStyle, ruleStyle, annotateFn, writeCommentFn)
+		renderNestedExtensions(b, nested, typeStyle, dimStyle, commentStyle)
+		renderNestedMessages(b, nested, subPath, typeStyle, dimStyle, commentStyle, nameStyle, ruleStyle, annotateFn, writeCommentFn)
+	}
 }
 
 func renderMethod(m protoreflect.MethodDescriptor, typeStyle, dimStyle, commentStyle lipgloss.Style) string {
@@ -213,6 +381,9 @@ func renderMethod(m protoreflect.MethodDescriptor, typeStyle, dimStyle, commentS
 	if len(annotations) > 0 {
 		line += "  " + dimStyle.Render("["+strings.Join(annotations, ", ")+"]")
 	}
+	if custom := customOptionsAnnotation(m.Options()); custom != "" {
+		line += "  " + dimStyle.Render(custom)
+	}
 	b.WriteString(line + "\n")
 	if c := leadingComment(m); c != "" {
 		for _, l := range strings.Split(c, "\n") {
@@ -225,18 +396,34 @@ func renderMethod(m protoreflect.MethodDescriptor, typeStyle, dimStyle, commentS
 func renderField(f protoreflect.FieldDescriptor, typeStyle, dimStyle, commentStyle lipgloss.Style) string {
 	var b strings.Builder
 	typeName := fieldTypeName(f)
-	if f.IsList() {
+	if f.Kind() == protoreflect.GroupKind {
+		typeName = "group " + typeName
+	}
+	switch {
+	case f.IsList():
 		typeName = "repeated " + typeName
-	} else if f.IsMap() {
-		typeName = "map"
+	case f.Cardinality() == protoreflect.Required:
+		typeName = "required " + typeName
 	}
 	line := fmt.Sprintf("%s %s = %d",
 		typeStyle.Render(typeName),
 		string(f.Name()),
 		f.Number(),
 	)
+	if f.HasDefault() {
+		line += "  " + dimStyle.Render(fmt.Sprintf("[default = %s]", formatSingularOptionValue(f, f.Default())))
+	}
+	if f.JSONName() != derivedJSONName(string(f.Name())) {
+		line += "  " + dimStyle.Render(fmt.Sprintf("[json_name = %q]", f.JSONName()))
+	}
+	if hasExplicitOption(f.Options(), "packed") {
+		line += "  " + dimStyle.Render(fmt.Sprintf("[packed = %v]", f.IsPacked()))
+	}
 	if opts, ok := f.Options().(*descriptorpb.FieldOptions); ok && opts != nil && opts.GetDeprecated() {
 		line += "  " + dimStyle.Render("[deprecated]")
+	}
+	if custom := customOptionsAnnotation(f.Options()); custom != "" {
+		line += "  " + dimStyle.Render(custom)
 	}
 	b.WriteString(line + "\n")
 	if c := leadingComment(f); c != "" {
@@ -247,11 +434,28 @@ func renderField(f protoreflect.FieldDescriptor, typeStyle, dimStyle, commentSty
 	return b.String()
 }
 
-func renderEnumValue(v protoreflect.EnumValueDescriptor, dimStyle, commentStyle lipgloss.Style) string {
+// enumValueAliasOf returns the name of the canonical enum value that v is an
+// alias of (shares its number with an earlier-declared value in enum), or ""
+// if v is itself canonical.
+func enumValueAliasOf(enum protoreflect.EnumDescriptor, v protoreflect.EnumValueDescriptor) string {
+	canonical := enum.Values().ByNumber(v.Number())
+	if canonical == nil || canonical.Name() == v.Name() {
+		return ""
+	}
+	return string(canonical.Name())
+}
+
+func renderEnumValue(v protoreflect.EnumValueDescriptor, aliasOf string, dimStyle, commentStyle lipgloss.Style) string {
 	var b strings.Builder
 	line := fmt.Sprintf("%s = %d", string(v.Name()), v.Number())
+	if aliasOf != "" {
+		line += "  " + dimStyle.Render(fmt.Sprintf("[alias of %s]", aliasOf))
+	}
 	if opts, ok := v.Options().(*descriptorpb.EnumValueOptions); ok && opts != nil && opts.GetDeprecated() {
 		line += "  " + dimStyle.Render("[deprecated]")
+	}
+	if custom := customOptionsAnnotation(v.Options()); custom != "" {
+		line += "  " + dimStyle.Render(custom)
 	}
 	b.WriteString(line + "\n")
 	if c := leadingComment(v); c != "" {
@@ -296,13 +500,119 @@ func isDeprecated(d protoreflect.Descriptor) bool {
 	return false
 }
 
-// fieldTypeName returns a human-readable type name for a field.
+// hasExplicitOption reports whether the named field was explicitly set on
+// opts, as opposed to merely having a well-defined effective/default value.
+// Some options (like FieldOptions.packed) have syntax-dependent implicit
+// defaults, so an accessor's return value alone can't tell us whether the
+// .proto source actually wrote it out.
+func hasExplicitOption(opts protoreflect.ProtoMessage, name protoreflect.Name) bool {
+	if opts == nil {
+		return false
+	}
+	m := opts.ProtoReflect()
+	if !m.IsValid() {
+		return false
+	}
+	fd := m.Descriptor().Fields().ByName(name)
+	if fd == nil {
+		return false
+	}
+	return m.Has(fd)
+}
+
+// customOptionsAnnotation returns a "[(pkg.ext) = value, ...]" annotation
+// listing any custom (extension) options set on opts, or "" if there are
+// none. Standard, non-extension fields (e.g. deprecated) are rendered
+// elsewhere and are intentionally excluded here to avoid duplication.
+func customOptionsAnnotation(opts protoreflect.ProtoMessage) string {
+	if opts == nil {
+		return ""
+	}
+	m := opts.ProtoReflect()
+	if !m.IsValid() {
+		return ""
+	}
+	var parts []string
+	m.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
+		if !fd.IsExtension() {
+			return true
+		}
+		parts = append(parts, fmt.Sprintf("(%s) = %s", fd.FullName(), formatOptionValue(fd, v)))
+		return true
+	})
+	if len(parts) == 0 {
+		return ""
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}
+
+// formatOptionValue formats a single option field's value for display,
+// expanding repeated values into a bracketed list.
+func formatOptionValue(fd protoreflect.FieldDescriptor, v protoreflect.Value) string {
+	if fd.IsList() {
+		list := v.List()
+		parts := make([]string, list.Len())
+		for i := range list.Len() {
+			parts[i] = formatSingularOptionValue(fd, list.Get(i))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	}
+	return formatSingularOptionValue(fd, v)
+}
+
+// formatSingularOptionValue formats one scalar/message/enum option value.
+// Message-kind values are formatted with prototext, which works for
+// dynamic (unrecognized-at-compile-time) messages just as well as
+// generated ones.
+func formatSingularOptionValue(fd protoreflect.FieldDescriptor, v protoreflect.Value) string {
+	switch fd.Kind() {
+	case protoreflect.MessageKind, protoreflect.GroupKind:
+		text, err := prototext.MarshalOptions{Multiline: false}.Marshal(v.Message().Interface())
+		if err != nil {
+			return "{ ... }"
+		}
+		return "{ " + strings.TrimSpace(string(text)) + " }"
+	case protoreflect.EnumKind:
+		if ev := fd.Enum().Values().ByNumber(v.Enum()); ev != nil {
+			return string(ev.Name())
+		}
+		return fmt.Sprintf("%d", v.Enum())
+	case protoreflect.StringKind:
+		return fmt.Sprintf("%q", v.String())
+	case protoreflect.BytesKind:
+		return fmt.Sprintf("%q", v.Bytes())
+	default:
+		return fmt.Sprintf("%v", v.Interface())
+	}
+}
+
+// fieldTypeName returns a human-readable type name for a field, using
+// fully-qualified names for types from other packages.
 func fieldTypeName(f protoreflect.FieldDescriptor) string {
+	if f.IsMap() {
+		key := f.MapKey().Kind().String()
+		val := fieldScalarOrRefName(f.MapValue(), f.ParentFile().Package())
+		return fmt.Sprintf("map<%s, %s>", key, val)
+	}
+	return fieldScalarOrRefName(f, f.ParentFile().Package())
+}
+
+// fieldScalarOrRefName returns the type name for a field, qualifying
+// message/enum types from other packages with their full package path.
+func fieldScalarOrRefName(f protoreflect.FieldDescriptor, pkg protoreflect.FullName) string {
 	switch f.Kind() {
 	case protoreflect.MessageKind, protoreflect.GroupKind:
-		return string(f.Message().Name())
+		msg := f.Message()
+		if msg.ParentFile().Package() != pkg {
+			return string(msg.FullName())
+		}
+		return string(msg.Name())
 	case protoreflect.EnumKind:
-		return string(f.Enum().Name())
+		en := f.Enum()
+		if en.ParentFile().Package() != pkg {
+			return string(en.FullName())
+		}
+		return string(en.Name())
 	default:
 		return f.Kind().String()
 	}
