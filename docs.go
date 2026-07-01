@@ -161,7 +161,7 @@ func renderPackage(p *docsPackage, isDark bool) string {
 
 	writeComment := func(d protoreflect.Descriptor) {
 		if c := leadingComment(d); c != "" {
-			for _, line := range strings.Split(c, "\n") {
+			for line := range strings.SplitSeq(c, "\n") {
 				b.WriteString(commentStyle.Render(line) + "\n")
 			}
 		}
@@ -257,7 +257,7 @@ func renderMessageFields(b *strings.Builder, msg protoreflect.MessageDescriptor,
 			continue
 		}
 		if c := leadingComment(oneof); c != "" {
-			for _, l := range strings.Split(c, "\n") {
+			for l := range strings.SplitSeq(c, "\n") {
 				b.WriteString(commentStyle.Render(l) + "\n")
 			}
 		}
@@ -437,7 +437,7 @@ func renderMethod(m protoreflect.MethodDescriptor, typeStyle, dimStyle, commentS
 	}
 	b.WriteString(line + "\n")
 	if c := leadingComment(m); c != "" {
-		for _, l := range strings.Split(c, "\n") {
+		for l := range strings.SplitSeq(c, "\n") {
 			b.WriteString("  " + commentStyle.Render(l) + "\n")
 		}
 	}
@@ -493,7 +493,7 @@ func renderField(f protoreflect.FieldDescriptor, typeStyle, dimStyle, commentSty
 	}
 	b.WriteString(line + "\n")
 	if c := leadingComment(f); c != "" {
-		for _, l := range strings.Split(c, "\n") {
+		for l := range strings.SplitSeq(c, "\n") {
 			b.WriteString("  " + commentStyle.Render(l) + "\n")
 		}
 	}
@@ -525,7 +525,7 @@ func renderEnumValue(v protoreflect.EnumValueDescriptor, aliasOf string, dimStyl
 	}
 	b.WriteString(line + "\n")
 	if c := leadingComment(v); c != "" {
-		for _, l := range strings.Split(c, "\n") {
+		for l := range strings.SplitSeq(c, "\n") {
 			b.WriteString("  " + commentStyle.Render(l) + "\n")
 		}
 	}
