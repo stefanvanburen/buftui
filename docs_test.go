@@ -710,6 +710,12 @@ func TestRenderPackage_RequiredField(t *testing.T) {
 	attest.True(t, strings.Contains(out, "required string"), attest.Sprintf("required keyword missing: %q", out))
 	attest.True(t, strings.Contains(out, "must_have"), attest.Sprintf("field name missing: %q", out))
 	attest.Equal(t, strings.Count(out, "required"), 1, attest.Sprintf("only must_have should be marked required: %q", out))
+
+	// proto2 requires every non-required, non-repeated field to be declared
+	// with an explicit "optional" keyword in source -- unlike proto3, where a
+	// bare field has implicit presence and no keyword at all.
+	attest.True(t, strings.Contains(out, "optional string"), attest.Sprintf("proto2 plain field missing 'optional' keyword: %q", out))
+	attest.True(t, strings.Contains(out, "optional_field"), attest.Sprintf("field name missing: %q", out))
 }
 
 func TestRenderPackage_NestedEnum(t *testing.T) {
@@ -1053,6 +1059,30 @@ func TestRenderField_ExplicitPacked(t *testing.T) {
 	attest.True(t, strings.Contains(out, "[packed = true]"), attest.Sprintf("explicit packed=true missing: %q", out))
 	attest.True(t, strings.Contains(out, "[packed = false]"), attest.Sprintf("explicit packed=false missing: %q", out))
 	attest.Equal(t, strings.Count(out, "[packed"), 2, attest.Sprintf("field without an explicit option should not be annotated: %q", out))
+}
+
+func TestRenderField_DebugRedact(t *testing.T) {
+	t.Parallel()
+
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:    ptr("redact.proto"),
+		Syntax:  ptr("proto3"),
+		Package: ptr("redact"),
+		MessageType: []*descriptorpb.DescriptorProto{{
+			Name: ptr("M"),
+			Field: []*descriptorpb.FieldDescriptorProto{
+				{Name: ptr("plain"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+				{Name: ptr("password"), Number: ptr(int32(2)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(), Options: &descriptorpb.FieldOptions{DebugRedact: ptr(true)}},
+			},
+		}},
+	}
+
+	files := buildTestRegistry(t, fdp)
+	items := packagesFromDocs(files, map[string]bool{"redact.proto": true})
+	out := renderPackage(items[0].(*docsPackage), false)
+
+	attest.True(t, strings.Contains(out, "[debug_redact]"), attest.Sprintf("debug_redact annotation missing: %q", out))
+	attest.Equal(t, strings.Count(out, "debug_redact"), 1, attest.Sprintf("only password should be annotated: %q", out))
 }
 
 func TestRenderPackage_EnumAlias(t *testing.T) {

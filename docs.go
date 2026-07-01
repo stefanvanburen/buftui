@@ -455,9 +455,11 @@ func renderField(f protoreflect.FieldDescriptor, typeStyle, dimStyle, commentSty
 		typeName = "repeated " + typeName
 	case f.Cardinality() == protoreflect.Required:
 		typeName = "required " + typeName
-	case f.ContainingOneof() != nil && f.ContainingOneof().IsSynthetic():
-		// A proto3 `optional` scalar field -- the synthetic oneof itself
-		// is never rendered, so surface the presence tracking here instead.
+	case f.HasOptionalKeyword():
+		// Covers both a proto2 field explicitly declared "optional" and a
+		// proto3/editions field with explicit presence (which compiles to a
+		// hidden synthetic oneof that's never rendered as its own block, so
+		// the presence tracking is surfaced here instead).
 		typeName = "optional " + typeName
 	}
 	line := fmt.Sprintf("%s %s = %d",
@@ -482,6 +484,9 @@ func renderField(f protoreflect.FieldDescriptor, typeStyle, dimStyle, commentSty
 	}
 	if opts, ok := f.Options().(*descriptorpb.FieldOptions); ok && opts != nil && opts.GetDeprecated() {
 		line += "  " + dimStyle.Render("[deprecated]")
+	}
+	if opts, ok := f.Options().(*descriptorpb.FieldOptions); ok && opts != nil && opts.GetDebugRedact() {
+		line += "  " + dimStyle.Render("[debug_redact]")
 	}
 	if custom := customOptionsAnnotation(f.Options()); custom != "" {
 		line += "  " + dimStyle.Render(custom)
