@@ -1266,3 +1266,38 @@ func TestRenderPackage_ClosedEnum(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderField_ExtensionJSONNameNotFlagged(t *testing.T) {
+	t.Parallel()
+
+	// Extension fields get an automatic bracketed JSON name per the
+	// protobuf spec ("[pkg.field]"), which will always differ from the
+	// plain camelCase derivation used for regular fields. That's not an
+	// author-written override and shouldn't be flagged as one.
+	descProtoFDP := protodesc.ToFileDescriptorProto((&descriptorpb.FileOptions{}).ProtoReflect().Descriptor().ParentFile())
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:       ptr("extjson.proto"),
+		Syntax:     ptr("proto2"),
+		Package:    ptr("extjson"),
+		Dependency: []string{"google/protobuf/descriptor.proto"},
+		Extension: []*descriptorpb.FieldDescriptorProto{
+			{
+				Name:     ptr("my_ext"),
+				Number:   ptr(int32(50001)),
+				Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+				Type:     descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+				Extendee: ptr(".google.protobuf.FieldOptions"),
+			},
+		},
+	}
+
+	files, err := protodesc.NewFiles(&descriptorpb.FileDescriptorSet{
+		File: []*descriptorpb.FileDescriptorProto{descProtoFDP, fdp},
+	})
+	attest.Ok(t, err, attest.Fatal())
+
+	items := packagesFromDocs(files, map[string]bool{"extjson.proto": true})
+	out := renderPackage(items[0].(*docsPackage), false)
+
+	attest.False(t, strings.Contains(out, "json_name"), attest.Sprintf("extension field's automatic bracketed json_name should not be flagged as an override: %q", out))
+}

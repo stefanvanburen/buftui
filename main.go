@@ -116,6 +116,11 @@ func run(_ context.Context, args []string) error {
 	docsList.SetShowTitle(false)
 	docsList.SetStatusBarItemName("definition", "definitions")
 
+	// Docs entries can have long lines (e.g. several custom options stacked
+	// on one field or method) -- wrap them instead of silently clipping.
+	docsViewport := viewport.New()
+	docsViewport.SoftWrap = true
+
 	model := model{
 		state:            initialState,
 		spinner:          spinner.New(spinner.WithSpinner(spinner.Dot)),
@@ -132,7 +137,7 @@ func run(_ context.Context, args []string) error {
 		commitFilesList: commitFilesList,
 		labelsList:      labelsList,
 		docsList:        docsList,
-		docsViewport:    viewport.New(),
+		docsViewport:    docsViewport,
 	}
 
 	if _, err := tea.NewProgram(model).Run(); err != nil {

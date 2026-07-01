@@ -468,7 +468,13 @@ func renderField(f protoreflect.FieldDescriptor, typeStyle, dimStyle, commentSty
 	if f.HasDefault() {
 		line += "  " + dimStyle.Render(fmt.Sprintf("[default = %s]", formatSingularOptionValue(f, f.Default())))
 	}
-	if f.JSONName() != derivedJSONName(string(f.Name())) {
+	wantJSONName := derivedJSONName(string(f.Name()))
+	if f.IsExtension() {
+		// Extension fields always get an automatic "[pkg.field]" JSON name
+		// per the protobuf spec -- that's not an author-written override.
+		wantJSONName = fmt.Sprintf("[%s]", f.FullName())
+	}
+	if f.JSONName() != wantJSONName {
 		line += "  " + dimStyle.Render(fmt.Sprintf("[json_name = %q]", f.JSONName()))
 	}
 	if hasExplicitOption(f.Options(), "packed") {
