@@ -1148,3 +1148,121 @@ func TestRenderField_Group(t *testing.T) {
 	attest.True(t, strings.Contains(out, "repeated group Results"), attest.Sprintf("repeated group field missing 'repeated group': %q", out))
 	attest.True(t, strings.Contains(out, "result = 1"), attest.Sprintf("group field name/number missing: %q", out))
 }
+
+func TestRenderPackage_Proto3OptionalField(t *testing.T) {
+	t.Parallel()
+
+	// proto3 `optional` fields compile to a hidden "synthetic" oneof
+	// containing just that one field -- this must not leak into the docs
+	// as a visible oneof block.
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:    ptr("opt.proto"),
+		Syntax:  ptr("proto3"),
+		Package: ptr("opt"),
+		MessageType: []*descriptorpb.DescriptorProto{{
+			Name: ptr("M"),
+			Field: []*descriptorpb.FieldDescriptorProto{
+				{Name: ptr("name"), Number: ptr(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(), Proto3Optional: ptr(true), OneofIndex: ptr(int32(0))},
+			},
+			OneofDecl: []*descriptorpb.OneofDescriptorProto{
+				{Name: ptr("_name")},
+			},
+		}},
+	}
+
+	files := buildTestRegistry(t, fdp)
+	items := packagesFromDocs(files, map[string]bool{"opt.proto": true})
+	out := renderPackage(items[0].(*docsPackage), false)
+
+	attest.True(t, strings.Contains(out, "optional string"), attest.Sprintf("optional keyword missing: %q", out))
+	attest.True(t, strings.Contains(out, "name = 1"), attest.Sprintf("field missing: %q", out))
+	attest.False(t, strings.Contains(out, "oneof"), attest.Sprintf("synthetic oneof should not render as a oneof block: %q", out))
+	attest.False(t, strings.Contains(out, "_name"), attest.Sprintf("synthetic oneof name should never leak into docs: %q", out))
+}
+
+func TestRenderPackage_EnumReserved(t *testing.T) {
+	t.Parallel()
+
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:    ptr("enumres.proto"),
+		Syntax:  ptr("proto3"),
+		Package: ptr("enumres"),
+		EnumType: []*descriptorpb.EnumDescriptorProto{{
+			Name: ptr("Status"),
+			Value: []*descriptorpb.EnumValueDescriptorProto{
+				{Name: ptr("STATUS_UNSPECIFIED"), Number: ptr(int32(0))},
+			},
+			ReservedRange: []*descriptorpb.EnumDescriptorProto_EnumReservedRange{
+				{Start: ptr(int32(5)), End: ptr(int32(10))},  // inclusive: 5 to 10
+				{Start: ptr(int32(20)), End: ptr(int32(20))}, // single: 20
+			},
+			ReservedName: []string{"OLD_STATUS", "LEGACY"},
+		}},
+	}
+
+	files := buildTestRegistry(t, fdp)
+	items := packagesFromDocs(files, map[string]bool{"enumres.proto": true})
+	out := renderPackage(items[0].(*docsPackage), false)
+
+	attest.True(t, strings.Contains(out, "reserved 5 to 10;"), attest.Sprintf("enum reserved range missing: %q", out))
+	attest.True(t, strings.Contains(out, "reserved 20;"), attest.Sprintf("enum single reserved missing: %q", out))
+	attest.True(t, strings.Contains(out, `"OLD_STATUS"`), attest.Sprintf("enum reserved name missing: %q", out))
+	attest.True(t, strings.Contains(out, `"LEGACY"`), attest.Sprintf("enum reserved name missing: %q", out))
+}
+
+func TestRenderPackage_ExtensionRangeCustomOption(t *testing.T) {
+	t.Parallel()
+
+	rangeExt := buildExtensionType(t, ".google.protobuf.ExtensionRangeOptions", "range_owner", 50001, descriptorpb.FieldDescriptorProto_TYPE_STRING, "")
+	rangeOpts := &descriptorpb.ExtensionRangeOptions{}
+	proto.SetExtension(rangeOpts, rangeExt, "team-foo")
+
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:    ptr("extrangeopt.proto"),
+		Syntax:  ptr("proto2"),
+		Package: ptr("ero"),
+		MessageType: []*descriptorpb.DescriptorProto{{
+			Name: ptr("M"),
+			ExtensionRange: []*descriptorpb.DescriptorProto_ExtensionRange{
+				{Start: ptr(int32(100)), End: ptr(int32(200)), Options: rangeOpts},
+			},
+		}},
+	}
+
+	files := buildTestRegistry(t, fdp)
+	items := packagesFromDocs(files, map[string]bool{"extrangeopt.proto": true})
+	out := renderPackage(items[0].(*docsPackage), false)
+
+	attest.True(t, strings.Contains(out, "extensions 100 to 199;"), attest.Sprintf("extension range missing: %q", out))
+	attest.True(t, strings.Contains(out, "testext.range_owner"), attest.Sprintf("extension range custom option missing: %q", out))
+	attest.True(t, strings.Contains(out, "team-foo"), attest.Sprintf("extension range custom option value missing: %q", out))
+}
+
+func TestRenderPackage_ClosedEnum(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		syntax     string
+		wantClosed bool
+	}{
+		{"proto2", true},
+		{"proto3", false},
+	} {
+		t.Run(tc.syntax, func(t *testing.T) {
+			t.Parallel()
+			fdp := &descriptorpb.FileDescriptorProto{
+				Name:    ptr("closed.proto"),
+				Syntax:  ptr(tc.syntax),
+				Package: ptr("closed"),
+				EnumType: []*descriptorpb.EnumDescriptorProto{{
+					Name:  ptr("E"),
+					Value: []*descriptorpb.EnumValueDescriptorProto{{Name: ptr("E_UNSPECIFIED"), Number: ptr(int32(0))}},
+				}},
+			}
+			files := buildTestRegistry(t, fdp)
+			items := packagesFromDocs(files, map[string]bool{"closed.proto": true})
+			out := renderPackage(items[0].(*docsPackage), false)
+			attest.Equal(t, strings.Contains(out, "[closed]"), tc.wantClosed, attest.Sprintf("closed=%v mismatch: %q", tc.wantClosed, out))
+		})
+	}
+}

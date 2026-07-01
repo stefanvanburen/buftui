@@ -172,6 +172,9 @@ func renderPackage(p *docsPackage, isDark bool) string {
 		if isDeprecated(d) {
 			s += "  " + deprecatedStyle.Render("[deprecated]")
 		}
+		if enum, ok := d.(protoreflect.EnumDescriptor); ok && enum.IsClosed() {
+			s += "  " + dimStyle.Render("[closed]")
+		}
 		if custom := customOptionsAnnotation(d.Options()); custom != "" {
 			s += "  " + dimStyle.Render(custom)
 		}
@@ -218,6 +221,7 @@ func renderPackage(p *docsPackage, isDark bool) string {
 			v := enum.Values().Get(i)
 			b.WriteString(renderEnumValue(v, enumValueAliasOf(enum, v), dimStyle, commentStyle))
 		}
+		renderEnumReserved(&b, enum, dimStyle)
 		b.WriteString("\n")
 	}
 
@@ -237,16 +241,21 @@ func renderPackage(p *docsPackage, isDark bool) string {
 // ranges/names, and extension ranges — everything about the message except
 // its nested types.
 func renderMessageFields(b *strings.Builder, msg protoreflect.MessageDescriptor, typeStyle, dimStyle, commentStyle lipgloss.Style) {
-	// Non-oneof fields first.
+	// Non-oneof fields first. proto3 `optional` fields compile to a hidden
+	// "synthetic" oneof containing just that field -- treat those as plain
+	// fields rather than surfacing the synthetic oneof as a visible block.
 	for i := range msg.Fields().Len() {
 		f := msg.Fields().Get(i)
-		if f.ContainingOneof() == nil {
+		if oneof := f.ContainingOneof(); oneof == nil || oneof.IsSynthetic() {
 			b.WriteString(renderField(f, typeStyle, dimStyle, commentStyle))
 		}
 	}
 	// Oneof blocks.
 	for i := range msg.Oneofs().Len() {
 		oneof := msg.Oneofs().Get(i)
+		if oneof.IsSynthetic() {
+			continue
+		}
 		if c := leadingComment(oneof); c != "" {
 			for _, l := range strings.Split(c, "\n") {
 				b.WriteString(commentStyle.Render(l) + "\n")
@@ -267,7 +276,25 @@ func renderMessageFields(b *strings.Builder, msg protoreflect.MessageDescriptor,
 		b.WriteString(dimStyle.Render(fmt.Sprintf("reserved %q;", msg.ReservedNames().Get(i))) + "\n")
 	}
 	// Extension ranges — field numbers reserved for third-party extensions.
-	renderRanges(b, "extensions", msg.ExtensionRanges(), dimStyle)
+	// Rendered separately from renderRanges since each range can carry its
+	// own custom options (e.g. a declaration of who owns the range).
+	for i := range msg.ExtensionRanges().Len() {
+		r := msg.ExtensionRanges().Get(i)
+		lo, hi := int(r[0]), int(r[1])-1
+		var text string
+		switch {
+		case protowire.Number(hi) == protowire.MaxValidNumber:
+			text = fmt.Sprintf("extensions %d to max;", lo)
+		case lo == hi:
+			text = fmt.Sprintf("extensions %d;", lo)
+		default:
+			text = fmt.Sprintf("extensions %d to %d;", lo, hi)
+		}
+		if custom := customOptionsAnnotation(msg.ExtensionRangeOptions(i)); custom != "" {
+			text += "  " + custom
+		}
+		b.WriteString(dimStyle.Render(text) + "\n")
+	}
 }
 
 // renderRanges renders field-number ranges, used for both "reserved" and
@@ -283,6 +310,29 @@ func renderRanges(b *strings.Builder, keyword string, ranges protoreflect.FieldR
 			b.WriteString(dimStyle.Render(fmt.Sprintf("%s %d;", keyword, lo)) + "\n")
 		default:
 			b.WriteString(dimStyle.Render(fmt.Sprintf("%s %d to %d;", keyword, lo, hi)) + "\n")
+		}
+	}
+}
+
+// renderEnumReserved renders an enum's reserved ranges and names.
+func renderEnumReserved(b *strings.Builder, enum protoreflect.EnumDescriptor, dimStyle lipgloss.Style) {
+	renderEnumRanges(b, enum.ReservedRanges(), dimStyle)
+	for i := range enum.ReservedNames().Len() {
+		b.WriteString(dimStyle.Render(fmt.Sprintf("reserved %q;", enum.ReservedNames().Get(i))) + "\n")
+	}
+}
+
+// renderEnumRanges renders enum reserved-number ranges as "N;" or "N to M;".
+// Unlike protoreflect.FieldRanges (half-open), protoreflect.EnumRanges are
+// fully inclusive, so this can't share renderRanges' off-by-one handling.
+func renderEnumRanges(b *strings.Builder, ranges protoreflect.EnumRanges, dimStyle lipgloss.Style) {
+	for i := range ranges.Len() {
+		r := ranges.Get(i)
+		lo, hi := int32(r[0]), int32(r[1])
+		if lo == hi {
+			b.WriteString(dimStyle.Render(fmt.Sprintf("reserved %d;", lo)) + "\n")
+		} else {
+			b.WriteString(dimStyle.Render(fmt.Sprintf("reserved %d to %d;", lo, hi)) + "\n")
 		}
 	}
 }
@@ -308,6 +358,7 @@ func renderNestedEnums(
 			v := enum.Values().Get(j)
 			b.WriteString(renderEnumValue(v, enumValueAliasOf(enum, v), dimStyle, commentStyle))
 		}
+		renderEnumReserved(b, enum, dimStyle)
 		b.WriteString("\n")
 	}
 }
@@ -404,6 +455,10 @@ func renderField(f protoreflect.FieldDescriptor, typeStyle, dimStyle, commentSty
 		typeName = "repeated " + typeName
 	case f.Cardinality() == protoreflect.Required:
 		typeName = "required " + typeName
+	case f.ContainingOneof() != nil && f.ContainingOneof().IsSynthetic():
+		// A proto3 `optional` scalar field -- the synthetic oneof itself
+		// is never rendered, so surface the presence tracking here instead.
+		typeName = "optional " + typeName
 	}
 	line := fmt.Sprintf("%s %s = %d",
 		typeStyle.Render(typeName),
