@@ -482,11 +482,13 @@ func renderField(f protoreflect.FieldDescriptor, typeStyle, dimStyle, commentSty
 	if hasExplicitOption(f.Options(), "packed") {
 		line += "  " + dimStyle.Render(fmt.Sprintf("[packed = %v]", f.IsPacked()))
 	}
-	if opts, ok := f.Options().(*descriptorpb.FieldOptions); ok && opts != nil && opts.GetDeprecated() {
-		line += "  " + dimStyle.Render("[deprecated]")
-	}
-	if opts, ok := f.Options().(*descriptorpb.FieldOptions); ok && opts != nil && opts.GetDebugRedact() {
-		line += "  " + dimStyle.Render("[debug_redact]")
+	if opts, ok := f.Options().(*descriptorpb.FieldOptions); ok {
+		if opts.GetDeprecated() {
+			line += "  " + dimStyle.Render("[deprecated]")
+		}
+		if opts.GetDebugRedact() {
+			line += "  " + dimStyle.Render("[debug_redact]")
+		}
 	}
 	if custom := customOptionsAnnotation(f.Options()); custom != "" {
 		line += "  " + dimStyle.Render(custom)
