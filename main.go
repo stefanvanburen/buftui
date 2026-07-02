@@ -192,7 +192,12 @@ type model struct {
 	loadingLabels        bool
 	compiledDocs         *protoregistry.Files
 	loadingDocs          bool
-	ownProtoFilePaths    map[string]bool
+	// docsErr holds the error from the most recent failed compileDocs
+	// attempt, so the docs tab can show it instead of falling back to the
+	// misleading "No proto files found" (as if the module were genuinely
+	// empty). Cleared on a new compile attempt or a successful one.
+	docsErr           error
+	ownProtoFilePaths map[string]bool
 
 	// Tab state
 	activeCommitTab commitTab
@@ -399,6 +404,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Reset docs state for the new commit.
 		m.compiledDocs = nil
 		m.loadingDocs = true
+		m.docsErr = nil
 		m.docsList.SetItems(nil)
 		commitFiles := make([]list.Item, len(m.currentCommitFiles))
 		for i, currentCommitFile := range m.currentCommitFiles {
@@ -425,6 +431,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case docsMsg:
 		m.compiledDocs = (*protoregistry.Files)(msg)
 		m.loadingDocs = false
+		m.docsErr = nil
 		items := packagesFromDocs(m.compiledDocs, m.ownProtoFilePaths)
 		m.docsList.SetItems(items)
 		if len(items) > 0 {
@@ -472,7 +479,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// of many possible sources of an errMsg, and isn't tied to a
 		// specific m.state below -- so it must be cleared unconditionally
 		// here, or the docs tab is left spinning forever with no way to
-		// tell the user what went wrong.
+		// tell the user what went wrong. If we were mid-compile when this
+		// arrived, record the error so the docs tab can show it instead of
+		// the misleading "No proto files found".
+		if m.loadingDocs {
+			m.docsErr = msg.err
+		}
 		m.loadingDocs = false
 		errStr := lipgloss.NewStyle().Foreground(colorError).Render(msg.err.Error())
 		switch m.state {
@@ -887,6 +899,8 @@ func (m model) View() tea.View {
 		case commitTabDocs:
 			if m.loadingDocs {
 				contentView = m.spinner.View() + " Compiling docs"
+			} else if m.docsErr != nil {
+				contentView = lipgloss.NewStyle().Foreground(colorError).Render("Error compiling docs: " + m.docsErr.Error())
 			} else if m.compiledDocs == nil {
 				contentView = "No proto files found"
 			} else if len(m.docsList.Items()) == 0 {

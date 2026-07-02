@@ -18,6 +18,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"go.akshayshah.org/attest"
 	"go.akshayshah.org/memhttp"
+	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -234,6 +235,9 @@ func newTestModel(c *client) model {
 	commitFilesList := list.New(nil, delegate, 20, 20)
 	commitFilesList.SetShowHelp(false)
 
+	docsList := list.New(nil, delegate, 20, 20)
+	docsList.SetShowHelp(false)
+
 	return model{
 		state:            modelStateNavigating,
 		spinner:          spinner.New(spinner.WithSpinner(spinner.Dot)),
@@ -248,6 +252,7 @@ func newTestModel(c *client) model {
 		moduleList:      moduleList,
 		commitList:      commitList,
 		commitFilesList: commitFilesList,
+		docsList:        docsList,
 	}
 }
 
@@ -501,6 +506,11 @@ func TestErrorRecovery(t *testing.T) {
 			// Must land in the expected state.
 			attest.Equal(t, m.state, tt.wantState)
 			attest.False(t, m.loadingDocs, attest.Sprintf("loadingDocs should be cleared after any error, leaving the docs tab stuck spinning otherwise"))
+			// An error that arrived while loadingDocs was true is a
+			// docs-compile failure and must be recorded so the docs tab can
+			// show it, rather than falling back to the misleading "No proto
+			// files found" (as if the module were genuinely empty).
+			attest.ErrorIs(t, m.docsErr, injected)
 			// Navigate errors must be surfaced via navigateErr, not m.err.
 			if tt.wantNavigateErr {
 				attest.NotEqual(t, m.navigateErr, nil)
@@ -531,4 +541,19 @@ func TestListModules_TimesOut(t *testing.T) {
 	_, ok := msg.(errMsg)
 	attest.True(t, ok, attest.Sprintf("expected a timeout to surface as errMsg, got %T: %v", msg, msg))
 	attest.True(t, elapsed < time.Second, attest.Sprintf("expected the call to time out around rpcTimeout (50ms), took %v", elapsed))
+}
+
+// TestDocsErr_ClearedOnSuccess verifies a stale docsErr from a previous
+// failed compile doesn't linger and shadow a subsequent successful one.
+func TestDocsErr_ClearedOnSuccess(t *testing.T) {
+	t.Parallel()
+
+	c := startFakeServer(t)
+	m := newTestModel(c)
+	m.docsErr = fmt.Errorf("stale error from a previous failed compile")
+
+	m2, _ := m.Update(docsMsg(&protoregistry.Files{}))
+	m = m2.(model)
+
+	attest.Equal(t, m.docsErr, nil)
 }
