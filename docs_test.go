@@ -1168,6 +1168,44 @@ func TestRenderField_ExplicitPacked(t *testing.T) {
 	attest.Equal(t, strings.Count(out, "[packed"), 2, attest.Sprintf("field without an explicit option should not be annotated: %q", out))
 }
 
+func TestRenderField_EditionsExplicitRepeatedFieldEncoding(t *testing.T) {
+	t.Parallel()
+
+	// FieldOptions.packed "is prohibited in Editions, but the
+	// repeated_field_encoding feature can be used to control the behavior"
+	// instead (per its doc comment in descriptor.proto) -- so a naive check
+	// of only the "packed" option can never fire for an Editions file, and
+	// an explicit per-field wire-encoding override would render invisibly.
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:    new("edpacked.proto"),
+		Syntax:  new("editions"),
+		Edition: descriptorpb.Edition_EDITION_2023.Enum(),
+		Package: new("edpacked"),
+		MessageType: []*descriptorpb.DescriptorProto{{
+			Name: new("M"),
+			Field: []*descriptorpb.FieldDescriptorProto{
+				// No explicit override -- should not be annotated even though
+				// it resolves to a well-defined effective packed/expanded value.
+				{Name: new("no_opt"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum()},
+				{
+					Name: new("explicit_expanded"), Number: new(int32(2)),
+					Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(),
+					Options: &descriptorpb.FieldOptions{
+						Features: &descriptorpb.FeatureSet{RepeatedFieldEncoding: descriptorpb.FeatureSet_EXPANDED.Enum()},
+					},
+				},
+			},
+		}},
+	}
+
+	files := buildTestRegistry(t, fdp)
+	items := packagesFromDocs(files, map[string]bool{"edpacked.proto": true})
+	out := renderPackage(items[0].(*docsPackage), false)
+
+	attest.True(t, strings.Contains(out, "[features.repeated_field_encoding = EXPANDED]"), attest.Sprintf("explicit repeated_field_encoding override missing: %q", out))
+	attest.Equal(t, strings.Count(out, "repeated_field_encoding"), 1, attest.Sprintf("field without an explicit override should not be annotated: %q", out))
+}
+
 func TestRenderField_DebugRedact(t *testing.T) {
 	t.Parallel()
 

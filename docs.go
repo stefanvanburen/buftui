@@ -501,6 +501,14 @@ func renderField(f protoreflect.FieldDescriptor, resolver *dynamicpb.Types, type
 	}
 	if hasExplicitOption(f.Options(), "packed") {
 		line += "  " + dimStyle.Render(fmt.Sprintf("[packed = %v]", f.IsPacked()))
+	} else if opts, ok := f.Options().(*descriptorpb.FieldOptions); ok {
+		// FieldOptions.packed is prohibited under Editions -- packed vs.
+		// expanded wire encoding is controlled by the repeated_field_encoding
+		// feature instead, so an explicit per-field override there would
+		// otherwise be invisible to the "packed" check above.
+		if enc := opts.GetFeatures().GetRepeatedFieldEncoding(); enc != descriptorpb.FeatureSet_REPEATED_FIELD_ENCODING_UNKNOWN {
+			line += "  " + dimStyle.Render(fmt.Sprintf("[features.repeated_field_encoding = %s]", enc))
+		}
 	}
 	if opts, ok := f.Options().(*descriptorpb.FieldOptions); ok {
 		if opts.GetDeprecated() {
