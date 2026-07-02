@@ -321,11 +321,13 @@ func (c *client) fetchModuleSuggestions(owner string) tea.Cmd {
 
 // compileDocs fetches transitive dependencies via the graph service, downloads
 // their proto files, and compiles everything using the experimental incremental
-// compiler from protocompile.
-func (c *client) compileDocs(commitID string, currentFiles []*modulev1.File) tea.Cmd {
+// compiler from protocompile. ctx is caller-supplied (rather than derived from
+// context.Background() internally, like every other method on client) so the
+// caller can cancel a long-running compile early -- e.g. in response to the
+// user backing out of the commit whose docs are being compiled -- instead of
+// it running in the background for the rest of compileDocsTimeout regardless.
+func (c *client) compileDocs(ctx context.Context, commitID string, currentFiles []*modulev1.File) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), compileDocsTimeout)
-		defer cancel()
 		// 1. Get the full transitive dependency graph.
 		graphResp, err := c.graphServiceClient.GetGraph(ctx, connect.NewRequest(&modulev1.GetGraphRequest{
 			ResourceRefs: []*modulev1.ResourceRef{{

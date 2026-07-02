@@ -196,7 +196,12 @@ type model struct {
 	// attempt, so the docs tab can show it instead of falling back to the
 	// misleading "No proto files found" (as if the module were genuinely
 	// empty). Cleared on a new compile attempt or a successful one.
-	docsErr           error
+	docsErr error
+	// docsCancel cancels the in-flight compileDocs call, if any, so backing
+	// out of a commit whose docs are still compiling actually frees up the
+	// network connection and local compilation instead of leaving them
+	// running in the background for the rest of compileDocsTimeout.
+	docsCancel        context.CancelFunc
 	ownProtoFilePaths map[string]bool
 
 	// Tab state
@@ -401,7 +406,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ownProtoFilePaths[f.Path] = true
 			}
 		}
-		// Reset docs state for the new commit.
+		// Reset docs state for the new commit. Cancel any still-running
+		// compile for a previously-selected commit first -- shouldn't
+		// normally happen (the only path to selecting a different commit
+		// goes through the Back handler below, which already cancels), but
+		// cheap insurance against a stale compile clobbering this one's
+		// result if some other path ever reaches here.
+		if m.docsCancel != nil {
+			m.docsCancel()
+		}
 		m.compiledDocs = nil
 		m.loadingDocs = true
 		m.docsErr = nil
@@ -426,12 +439,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		m.updateFileView(commitFile.underlying)
-		return m, m.client.compileDocs(m.currentCommitID, m.currentCommitFiles)
+		ctx, cancel := context.WithTimeout(context.Background(), compileDocsTimeout)
+		m.docsCancel = cancel
+		return m, m.client.compileDocs(ctx, m.currentCommitID, m.currentCommitFiles)
 
 	case docsMsg:
 		m.compiledDocs = msg.files
 		m.loadingDocs = false
 		m.docsErr = nil
+		m.docsCancel = nil
 		items := packagesFromDocs(m.compiledDocs, m.ownProtoFilePaths)
 		m.docsList.SetItems(items)
 		if len(items) > 0 {
@@ -496,6 +512,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// the misleading "No proto files found".
 		if m.loadingDocs {
 			m.docsErr = msg.err
+			m.docsCancel = nil
 		}
 		m.loadingDocs = false
 		errStr := lipgloss.NewStyle().Foreground(colorError).Render(msg.err.Error())
@@ -574,6 +591,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.commitList.ResetSelected()
 				return m, m.client.listModules(m.currentOwner)
 			case modelStateBrowsingCommitContents:
+				if m.docsCancel != nil {
+					m.docsCancel()
+					m.docsCancel = nil
+				}
 				m.state = modelStateLoadingCommits
 				m.commitFilesList.ResetSelected()
 				return m, m.client.listCommits(m.currentOwner, m.currentModule)
@@ -682,6 +703,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case modelStateBrowsingCommitContents:
 				// TODO: Hook this up to caching.
+				if m.docsCancel != nil {
+					m.docsCancel()
+					m.docsCancel = nil
+				}
 				m.state = modelStateLoadingCommits
 				m.commitFilesList.ResetSelected()
 				return m, m.client.listCommits(m.currentOwner, m.currentModule)

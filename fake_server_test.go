@@ -174,6 +174,25 @@ func (f *fakeResourceServiceHandler) GetResources(
 	return response, nil
 }
 
+// fakeGraphServiceHandler implements the GraphService for testing. delay, if
+// set, is slept before responding -- used to simulate a slow/hanging server.
+type fakeGraphServiceHandler struct {
+	modulev1connect.UnimplementedGraphServiceHandler
+	delay time.Duration
+}
+
+func (f *fakeGraphServiceHandler) GetGraph(
+	ctx context.Context,
+	req *connect.Request[modulev1.GetGraphRequest],
+) (*connect.Response[modulev1.GetGraphResponse], error) {
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
+	return connect.NewResponse(&modulev1.GetGraphResponse{
+		Graph: &modulev1.Graph{},
+	}), nil
+}
+
 // startFakeServer creates an in-memory Buf registry service and returns a client.
 func startFakeServer(t *testing.T) *client {
 	t.Helper()
@@ -184,6 +203,7 @@ func startFakeServer(t *testing.T) *client {
 	mux.Handle(modulev1connect.NewCommitServiceHandler(&fakeCommitServiceHandler{}))
 	mux.Handle(modulev1connect.NewDownloadServiceHandler(&fakeDownloadServiceHandler{}))
 	mux.Handle(modulev1connect.NewResourceServiceHandler(&fakeResourceServiceHandler{}))
+	mux.Handle(modulev1connect.NewGraphServiceHandler(&fakeGraphServiceHandler{}))
 
 	// Create in-memory HTTP server
 	server, err := memhttp.New(mux)
@@ -200,6 +220,7 @@ func startFakeServer(t *testing.T) *client {
 		commitServiceClient:   modulev1connect.NewCommitServiceClient(server.Client(), "https://example.com"),
 		downloadServiceClient: modulev1connect.NewDownloadServiceClient(server.Client(), "https://example.com"),
 		resourceServiceClient: modulev1connect.NewResourceServiceClient(server.Client(), "https://example.com"),
+		graphServiceClient:    modulev1connect.NewGraphServiceClient(server.Client(), "https://example.com"),
 	}
 }
 
@@ -573,4 +594,50 @@ func TestDocsMsg_SkippedMessagesSurfaceAStatusMessage(t *testing.T) {
 
 	_, cmd = m.Update(docsMsg{files: &protoregistry.Files{}})
 	attest.Equal(t, cmd, nil)
+}
+
+// TestCompileDocs_RespectsCancellation verifies that compileDocs actually
+// stops promptly when its context is cancelled -- as opposed to merely
+// timing out eventually -- so an esc-to-cancel keypress can free up a
+// long-running compile immediately instead of leaving it running in the
+// background for the rest of its timeout budget.
+func TestCompileDocs_RespectsCancellation(t *testing.T) {
+	t.Parallel()
+
+	c := startFakeServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+	msg := c.compileDocs(ctx, "somecommit", nil)()
+	elapsed := time.Since(start)
+
+	_, ok := msg.(errMsg)
+	attest.True(t, ok, attest.Sprintf("expected cancellation to surface as errMsg, got %T: %v", msg, msg))
+	attest.True(t, elapsed < time.Second, attest.Sprintf("expected a near-instant return on an already-cancelled context, took %v", elapsed))
+}
+
+// TestBack_CancelsInFlightDocsCompile verifies that backing out of a commit
+// whose docs are still compiling actually cancels the in-flight compile
+// (frees the network connection and local compilation immediately) instead
+// of leaving it running in the background for the rest of its timeout.
+func TestBack_CancelsInFlightDocsCompile(t *testing.T) {
+	t.Parallel()
+
+	c := startFakeServer(t)
+	m := newTestModel(c)
+	m.state = modelStateBrowsingCommitContents
+	m.currentOwner = "owner"
+	m.currentModule = "module"
+	m.loadingDocs = true
+
+	cancelled := false
+	m.docsCancel = func() { cancelled = true }
+
+	m2, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = m2.(model)
+
+	attest.True(t, cancelled, attest.Sprintf("expected backing out of the commit to cancel the in-flight docs compile"))
+	attest.Equal(t, m.docsCancel, nil)
+	attest.Equal(t, m.state, modelStateLoadingCommits)
 }
