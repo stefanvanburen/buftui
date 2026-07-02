@@ -465,11 +465,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.compiledDocs = msg.files
 		m.loadingDocs = false
 		m.docsErr = nil
-		m.docsCancel = nil
+		if m.docsCancel != nil {
+			m.docsCancel()
+			m.docsCancel = nil
+		}
 		items := packagesFromDocs(m.compiledDocs, m.ownProtoFilePaths)
 		m.docsList.SetItems(items)
-		m.docsMatches = nil
-		m.docsMatchIdx = -1
+		m.resetDocsSearch()
 		if len(items) > 0 {
 			if pkg, ok := m.docsList.SelectedItem().(*docsPackage); ok {
 				m.docsViewport.SetContent(renderPackage(pkg, m.isDark))
@@ -486,6 +488,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			note := fmt.Sprintf("Skipped %d legacy MessageSet %s (unsupported): %s", len(msg.skipped), noun, strings.Join(msg.skipped, ", "))
 			return m, m.docsList.NewStatusMessage(note)
+		}
+		return m, nil
+
+	case docsErrMsg:
+		// A dedicated message type, not the generic errMsg: loadingDocs
+		// stays true for up to compileDocsTimeout, during which an
+		// unrelated concurrent command (e.g. a labels fetch, triggered by
+		// switching tabs mid-compile) can also fail. Inferring "this error
+		// is from compileDocs" from "loadingDocs happens to still be true"
+		// would misattribute that unrelated error, and would wrongly
+		// cancel a compile that was actually still going to succeed.
+		m.loadingDocs = false
+		m.docsErr = msg.err
+		if m.docsCancel != nil {
+			m.docsCancel()
+			m.docsCancel = nil
 		}
 		return m, nil
 
@@ -522,19 +540,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case errMsg:
-		// A docs-compile failure (e.g. a schema using a feature protodesc
-		// can't build, like the legacy MessageSet wire format) is just one
-		// of many possible sources of an errMsg, and isn't tied to a
-		// specific m.state below -- so it must be cleared unconditionally
-		// here, or the docs tab is left spinning forever with no way to
-		// tell the user what went wrong. If we were mid-compile when this
-		// arrived, record the error so the docs tab can show it instead of
-		// the misleading "No proto files found".
-		if m.loadingDocs {
-			m.docsErr = msg.err
-			m.docsCancel = nil
-		}
-		m.loadingDocs = false
 		errStr := lipgloss.NewStyle().Foreground(colorError).Render(msg.err.Error())
 		switch m.state {
 		case modelStateLoadingModules, modelStateBrowsingModules:
@@ -575,8 +580,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch {
 			case key.Matches(msg, m.keys.Back):
 				m.docsSearchActive = false
-				m.docsMatches = nil
-				m.docsMatchIdx = -1
+				m.resetDocsSearch()
 				return m, nil
 			case key.Matches(msg, m.keys.Enter):
 				m.docsSearchActive = false
@@ -907,8 +911,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.docsList, cmd = m.docsList.Update(msg)
 			if m.docsList.Index() != prevIdx {
 				if pkg, ok := m.docsList.SelectedItem().(*docsPackage); ok {
-					m.docsMatches = nil
-					m.docsMatchIdx = -1
+					m.resetDocsSearch()
 					m.docsViewport.SetContent(renderPackage(pkg, m.isDark))
 					m.docsViewport.GotoTop()
 				}
@@ -1292,6 +1295,14 @@ func (m *model) loadTabIfNeeded() tea.Cmd {
 		return m.client.listLabels(m.currentOwner, m.currentModule)
 	}
 	return nil
+}
+
+// resetDocsSearch clears any active search results, e.g. because the
+// underlying content changed (a new compile, or switching packages) or the
+// search was cancelled.
+func (m *model) resetDocsSearch() {
+	m.docsMatches = nil
+	m.docsMatchIdx = -1
 }
 
 // jumpToDocsMatch scrolls docsViewport so the match at docsMatches[docsMatchIdx]

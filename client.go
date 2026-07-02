@@ -64,10 +64,8 @@ type client struct {
 	// immutable on the BSR, so a cached entry never needs invalidating --
 	// backtracking to a previously-viewed commit is served instantly
 	// instead of repeating the full graph-fetch+download+compile pipeline.
-	// docsCacheOrder tracks insertion order for simple FIFO eviction.
-	docsCacheMu    sync.Mutex
-	docsCache      map[string]docsCacheEntry
-	docsCacheOrder []string
+	docsCacheMu sync.Mutex
+	docsCache   map[string]docsCacheEntry
 }
 
 func newClient(httpClient connect.HTTPClient, remote, token string) *client {
@@ -99,6 +97,19 @@ type docsMsg struct {
 	files   *protoregistry.Files
 	skipped []string
 }
+
+// docsErrMsg is compileDocs' own error type, distinct from the generic
+// errMsg used by every other command. loadingDocs stays true for up to
+// compileDocsTimeout (2 minutes), during which an unrelated concurrent
+// command (e.g. a labels fetch, triggered by switching tabs mid-compile)
+// can also fail -- inferring "this error came from compileDocs" from
+// "loadingDocs happens to still be true" would misattribute that unrelated
+// error as a docs-compile failure, and would wrongly cancel a docs compile
+// that was actually still going to succeed. A distinct message type
+// sidesteps that entirely: only compileDocs ever produces one.
+type docsErrMsg struct{ err error }
+
+func (e docsErrMsg) Error() string { return e.err.Error() }
 
 func (c *client) listModules(currentOwner string) tea.Cmd {
 	return func() tea.Msg {
@@ -363,7 +374,7 @@ func (c *client) compileDocs(ctx context.Context, commitID string, currentFiles 
 			}},
 		}))
 		if err != nil {
-			return errMsg{fmt.Errorf("getting dependency graph: %w", err)}
+			return docsErrMsg{fmt.Errorf("getting dependency graph: %w", err)}
 		}
 
 		// 2. Collect dep commit IDs (everything in the graph except the current commit).
@@ -397,7 +408,7 @@ func (c *client) compileDocs(ctx context.Context, commitID string, currentFiles 
 				Values: values,
 			}))
 			if err != nil {
-				return errMsg{fmt.Errorf("downloading dependencies: %w", err)}
+				return docsErrMsg{fmt.Errorf("downloading dependencies: %w", err)}
 			}
 			for _, content := range dlResp.Msg.Contents {
 				for _, f := range content.Files {
@@ -426,12 +437,12 @@ func (c *client) compileDocs(ctx context.Context, commitID string, currentFiles 
 		}
 		irResults, _, err := incremental.Run(ctx, executor, irQueries...)
 		if err != nil {
-			return errMsg{fmt.Errorf("compiling protos: %w", err)}
+			return docsErrMsg{fmt.Errorf("compiling protos: %w", err)}
 		}
 		irFiles := make([]*ir.File, 0, len(irResults))
 		for _, r := range irResults {
 			if r.Fatal != nil {
-				return errMsg{fmt.Errorf("compiling protos: %w", r.Fatal)}
+				return docsErrMsg{fmt.Errorf("compiling protos: %w", r.Fatal)}
 			}
 			irFiles = append(irFiles, r.Value)
 		}
@@ -440,26 +451,26 @@ func (c *client) compileDocs(ctx context.Context, commitID string, currentFiles 
 		// with source code info for comments.
 		fdsBytes, err := fdp.DescriptorSetBytes(irFiles, fdp.IncludeSourceCodeInfo(true))
 		if err != nil {
-			return errMsg{fmt.Errorf("generating file descriptors: %w", err)}
+			return docsErrMsg{fmt.Errorf("generating file descriptors: %w", err)}
 		}
 		// 8. Build a registry, re-resolving custom options against the
 		// descriptor set's own extension declarations along the way.
 		regFiles, skipped, err := resolveRegistry(fdsBytes)
 		if err != nil {
-			return errMsg{err}
+			return docsErrMsg{err}
 		}
 
 		c.docsCacheMu.Lock()
 		if c.docsCache == nil {
 			c.docsCache = make(map[string]docsCacheEntry)
 		}
-		c.docsCache[commitID] = docsCacheEntry{files: regFiles, skipped: skipped}
-		c.docsCacheOrder = append(c.docsCacheOrder, commitID)
-		if len(c.docsCacheOrder) > docsCacheMaxEntries {
-			var oldest string
-			oldest, c.docsCacheOrder = c.docsCacheOrder[0], c.docsCacheOrder[1:]
-			delete(c.docsCache, oldest)
+		if len(c.docsCache) >= docsCacheMaxEntries {
+			for k := range c.docsCache {
+				delete(c.docsCache, k)
+				break
+			}
 		}
+		c.docsCache[commitID] = docsCacheEntry{files: regFiles, skipped: skipped}
 		c.docsCacheMu.Unlock()
 
 		return docsMsg{files: regFiles, skipped: skipped}

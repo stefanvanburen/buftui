@@ -551,10 +551,12 @@ func TestErrorRecovery(t *testing.T) {
 			c := startFakeServer(t)
 			m := newTestModel(c)
 			m.state = tt.initialState
-			// A docs-compile error (e.g. a schema using a feature protodesc
-			// can't build, like the legacy MessageSet wire format) must not
-			// leave the docs tab spinning forever -- loadingDocs should be
-			// cleared on any error, not just the docsMsg success path.
+			// A generic errMsg is not necessarily related to an in-flight
+			// docs compile (it could be from any unrelated concurrent
+			// command, e.g. a labels fetch triggered by switching tabs
+			// mid-compile) -- it must leave loadingDocs/docsErr alone.
+			// Only the dedicated docsErrMsg (see TestDocsErrMsg) is a
+			// docs-compile failure.
 			m.loadingDocs = true
 
 			m2, _ := m.Update(errMsg{err: injected})
@@ -564,12 +566,8 @@ func TestErrorRecovery(t *testing.T) {
 			attest.Equal(t, m.err, nil)
 			// Must land in the expected state.
 			attest.Equal(t, m.state, tt.wantState)
-			attest.False(t, m.loadingDocs, attest.Sprintf("loadingDocs should be cleared after any error, leaving the docs tab stuck spinning otherwise"))
-			// An error that arrived while loadingDocs was true is a
-			// docs-compile failure and must be recorded so the docs tab can
-			// show it, rather than falling back to the misleading "No proto
-			// files found" (as if the module were genuinely empty).
-			attest.ErrorIs(t, m.docsErr, injected)
+			attest.True(t, m.loadingDocs, attest.Sprintf("a generic errMsg unrelated to compileDocs must not clear loadingDocs"))
+			attest.Equal(t, m.docsErr, nil, attest.Sprintf("a generic errMsg unrelated to compileDocs must not populate docsErr"))
 			// Navigate errors must be surfaced via navigateErr, not m.err.
 			if tt.wantNavigateErr {
 				attest.NotEqual(t, m.navigateErr, nil)
@@ -578,6 +576,30 @@ func TestErrorRecovery(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDocsErrMsg verifies that a docsErrMsg (compileDocs' own error type)
+// clears loadingDocs, records docsErr for the Docs tab to show, and cancels
+// the (now-finished) compile's context -- independent of whatever m.state
+// or other concurrent operation happens to be in flight, unlike a generic
+// errMsg.
+func TestDocsErrMsg(t *testing.T) {
+	t.Parallel()
+
+	injected := fmt.Errorf("injected docs compile failure")
+	c := startFakeServer(t)
+	m := newTestModel(c)
+	m.loadingDocs = true
+	cancelled := false
+	m.docsCancel = func() { cancelled = true }
+
+	m2, _ := m.Update(docsErrMsg{err: injected})
+	m = m2.(model)
+
+	attest.False(t, m.loadingDocs, attest.Sprintf("docsErrMsg should clear loadingDocs, leaving the docs tab stuck spinning otherwise"))
+	attest.ErrorIs(t, m.docsErr, injected)
+	attest.True(t, cancelled, attest.Sprintf("docsErrMsg should cancel the (already-finished) compile's context"))
+	attest.Equal(t, m.docsCancel, nil)
 }
 
 // TestListModules_TimesOut verifies that a slow/hanging BSR backend can't
@@ -650,8 +672,8 @@ func TestCompileDocs_RespectsCancellation(t *testing.T) {
 	msg := c.compileDocs(ctx, "somecommit", nil)()
 	elapsed := time.Since(start)
 
-	_, ok := msg.(errMsg)
-	attest.True(t, ok, attest.Sprintf("expected cancellation to surface as errMsg, got %T: %v", msg, msg))
+	_, ok := msg.(docsErrMsg)
+	attest.True(t, ok, attest.Sprintf("expected cancellation to surface as docsErrMsg, got %T: %v", msg, msg))
 	attest.True(t, elapsed < time.Second, attest.Sprintf("expected a near-instant return on an already-cancelled context, took %v", elapsed))
 }
 
