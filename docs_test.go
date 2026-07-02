@@ -1488,6 +1488,49 @@ func TestRenderPackage_ClosedEnum(t *testing.T) {
 	}
 }
 
+func TestRenderPackage_SymbolVisibility(t *testing.T) {
+	t.Parallel()
+
+	// Symbol visibility (Editions 2024+) restricts whether a message/enum
+	// can be imported by other files. DescriptorProto/EnumDescriptorProto's
+	// Visibility field is left VISIBILITY_UNSET unless the source explicitly
+	// wrote "local" or "export" on that exact declaration -- otherwise it
+	// resolves from the file's default_symbol_visibility feature (or EXPORT
+	// pre-2024) -- so checking it directly tells us whether this was an
+	// explicit, author-written keyword.
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:    new("vis.proto"),
+		Syntax:  new("editions"),
+		Edition: descriptorpb.Edition_EDITION_2024.Enum(),
+		Package: new("vis"),
+		MessageType: []*descriptorpb.DescriptorProto{
+			{Name: new("LocalMsg"), Visibility: descriptorpb.SymbolVisibility_VISIBILITY_LOCAL.Enum()},
+			{Name: new("ExportMsg"), Visibility: descriptorpb.SymbolVisibility_VISIBILITY_EXPORT.Enum()},
+			{Name: new("PlainMsg")},
+		},
+		EnumType: []*descriptorpb.EnumDescriptorProto{
+			{
+				Name:       new("LocalEnum"),
+				Visibility: descriptorpb.SymbolVisibility_VISIBILITY_LOCAL.Enum(),
+				Value:      []*descriptorpb.EnumValueDescriptorProto{{Name: new("LOCAL_ENUM_UNSPECIFIED"), Number: new(int32(0))}},
+			},
+			{
+				Name:  new("PlainEnum"),
+				Value: []*descriptorpb.EnumValueDescriptorProto{{Name: new("PLAIN_ENUM_UNSPECIFIED"), Number: new(int32(0))}},
+			},
+		},
+	}
+
+	files := buildTestRegistry(t, fdp)
+	items := packagesFromDocs(files, map[string]bool{"vis.proto": true})
+	out := renderPackage(items[0].(*docsPackage), false)
+
+	attest.True(t, strings.Contains(out, "[local]"), attest.Sprintf("local annotation missing: %q", out))
+	attest.True(t, strings.Contains(out, "[export]"), attest.Sprintf("export annotation missing: %q", out))
+	attest.Equal(t, strings.Count(out, "[local]"), 2, attest.Sprintf("expected LocalMsg and LocalEnum to both be annotated: %q", out))
+	attest.Equal(t, strings.Count(out, "[export]"), 1, attest.Sprintf("expected only ExportMsg to be annotated: %q", out))
+}
+
 func TestRenderField_ExtensionJSONNameNotFlagged(t *testing.T) {
 	t.Parallel()
 

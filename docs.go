@@ -184,6 +184,9 @@ func renderPackage(p *docsPackage, isDark bool) string {
 		if enum, ok := d.(protoreflect.EnumDescriptor); ok && enum.IsClosed() {
 			s += "  " + dimStyle.Render("[closed]")
 		}
+		if vis := symbolVisibility(d); vis != "" {
+			s += "  " + dimStyle.Render("["+vis+"]")
+		}
 		if custom := customOptionsAnnotation(d.Options(), resolver); custom != "" {
 			s += "  " + dimStyle.Render(custom)
 		}
@@ -594,6 +597,33 @@ func isDeprecated(d protoreflect.Descriptor) bool {
 		return opts.GetDeprecated()
 	}
 	return false
+}
+
+// symbolVisibility returns "local" or "export" if d is a message or enum
+// whose "local"/"export" keyword (Editions 2024+) was explicitly written in
+// source, or "" otherwise. DescriptorProto/EnumDescriptorProto.Visibility is
+// left VISIBILITY_UNSET unless the source explicitly wrote one of those
+// keywords on that exact declaration -- an unset value instead resolves from
+// the file's default_symbol_visibility feature (or EXPORT pre-2024) -- so
+// checking it directly distinguishes an explicit override from the default.
+func symbolVisibility(d protoreflect.Descriptor) string {
+	var vis descriptorpb.SymbolVisibility
+	switch d := d.(type) {
+	case protoreflect.MessageDescriptor:
+		vis = protodesc.ToDescriptorProto(d).GetVisibility()
+	case protoreflect.EnumDescriptor:
+		vis = protodesc.ToEnumDescriptorProto(d).GetVisibility()
+	default:
+		return ""
+	}
+	switch vis {
+	case descriptorpb.SymbolVisibility_VISIBILITY_LOCAL:
+		return "local"
+	case descriptorpb.SymbolVisibility_VISIBILITY_EXPORT:
+		return "export"
+	default:
+		return ""
+	}
 }
 
 // hasExplicitOption reports whether the named field was explicitly set on
