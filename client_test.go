@@ -94,7 +94,7 @@ func TestResolveRegistry_DecodesCustomOption(t *testing.T) {
 
 	// resolveRegistry re-resolves options against the descriptor set's own
 	// extension declarations, so the custom option should now be visible.
-	regFiles, err := resolveRegistry(fdsBytes)
+	regFiles, _, err := resolveRegistry(fdsBytes)
 	attest.Ok(t, err, attest.Fatal())
 	resolvedM, err := regFiles.FindDescriptorByName("custom.M")
 	attest.Ok(t, err, attest.Fatal())
@@ -175,8 +175,9 @@ func TestResolveRegistry_SkipsMessageSet(t *testing.T) {
 	// everything else in the file -- including LegacyExtension itself,
 	// which is a perfectly ordinary message that merely also happened to
 	// declare that extend block.
-	regFiles, err := resolveRegistry(fdsBytes)
+	regFiles, skipped, err := resolveRegistry(fdsBytes)
 	attest.Ok(t, err, attest.Fatal())
+	attest.Equal(t, skipped, []string{"mset.Legacy"})
 
 	_, err = regFiles.FindDescriptorByName("mset.Legacy")
 	attest.True(t, err != nil, attest.Sprintf("the MessageSet message itself should have been skipped"))
@@ -207,8 +208,9 @@ func TestResolveRegistry_NoCustomOptions(t *testing.T) {
 	fdsBytes, err := proto.Marshal(&descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{fdp}})
 	attest.Ok(t, err, attest.Fatal())
 
-	regFiles, err := resolveRegistry(fdsBytes)
+	regFiles, skipped, err := resolveRegistry(fdsBytes)
 	attest.Ok(t, err, attest.Fatal())
+	attest.Equal(t, len(skipped), 0)
 	m, err := regFiles.FindDescriptorByName("plain.M")
 	attest.Ok(t, err, attest.Fatal())
 	attest.Equal(t, string(m.(protoreflect.MessageDescriptor).Fields().Get(0).Name()), "x")

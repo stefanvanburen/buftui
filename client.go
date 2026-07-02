@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -69,7 +70,14 @@ type modulesMsg []*modulev1.Module
 
 type labelsMsg []*modulev1.Label
 
-type docsMsg *protoregistry.Files
+// docsMsg carries the compiled registry along with the full names of any
+// messages silently skipped while building it (currently: legacy MessageSet
+// messages -- see stripMessageSets), so the caller can let the user know
+// something was omitted.
+type docsMsg struct {
+	files   *protoregistry.Files
+	skipped []string
+}
 
 func (c *client) listModules(currentOwner string) tea.Cmd {
 	return func() tea.Msg {
@@ -406,11 +414,11 @@ func (c *client) compileDocs(commitID string, currentFiles []*modulev1.File) tea
 		}
 		// 8. Build a registry, re-resolving custom options against the
 		// descriptor set's own extension declarations along the way.
-		regFiles, err := resolveRegistry(fdsBytes)
+		regFiles, skipped, err := resolveRegistry(fdsBytes)
 		if err != nil {
 			return errMsg{err}
 		}
-		return docsMsg(regFiles)
+		return docsMsg{files: regFiles, skipped: skipped}
 	}
 }
 
@@ -421,40 +429,48 @@ func (c *client) compileDocs(commitID string, currentFiles []*modulev1.File) tea
 // package happens to be statically linked into this binary; since buftui
 // browses arbitrary third-party schemas, most custom options would
 // otherwise be silently dropped into unknown fields and never render.
-func resolveRegistry(fdsBytes []byte) (*protoregistry.Files, error) {
+//
+// The second return value lists the full names of any message silently
+// skipped (currently: legacy MessageSet messages -- see stripMessageSets)
+// so a caller can tell the user something was omitted rather than leaving
+// them to wonder why a message they expected isn't documented.
+func resolveRegistry(fdsBytes []byte) (*protoregistry.Files, []string, error) {
 	var fds descriptorpb.FileDescriptorSet
 	if err := proto.Unmarshal(fdsBytes, &fds); err != nil {
-		return nil, fmt.Errorf("unmarshalling file descriptors: %w", err)
+		return nil, nil, fmt.Errorf("unmarshalling file descriptors: %w", err)
 	}
-	stripMessageSets(&fds)
+	skipped := stripMessageSets(&fds)
 	// WKT deps are resolved from the global registry.
 	regFiles, err := protodesc.NewFiles(&fds)
 	if err != nil {
-		return nil, fmt.Errorf("building file registry: %w", err)
+		return nil, nil, fmt.Errorf("building file registry: %w", err)
 	}
 
 	var resolvedFDS descriptorpb.FileDescriptorSet
 	unmarshalOpts := proto.UnmarshalOptions{Resolver: dynamicpb.NewTypes(regFiles)}
 	if err := unmarshalOpts.Unmarshal(fdsBytes, &resolvedFDS); err != nil {
-		return nil, fmt.Errorf("resolving custom options: %w", err)
+		return nil, nil, fmt.Errorf("resolving custom options: %w", err)
 	}
+	// Same underlying source bytes, so the same messages are found again
+	// here; only the first pass's names are reported to avoid duplicates.
 	stripMessageSets(&resolvedFDS)
 	resolvedFiles, err := protodesc.NewFiles(&resolvedFDS)
 	if err != nil {
-		return nil, fmt.Errorf("building file registry with resolved options: %w", err)
+		return nil, nil, fmt.Errorf("building file registry with resolved options: %w", err)
 	}
-	return resolvedFiles, nil
+	return resolvedFiles, skipped, nil
 }
 
 // stripMessageSets removes, in place, any message using the legacy proto1
 // MessageSet wire format ("option message_set_wire_format = true;") along
-// with any now-dangling "extend" declarations against it. protodesc.NewFiles
-// refuses to build a registry containing one at all -- MessageSet support
-// was dropped from protobuf-go's default build, gated behind an unstable,
-// explicitly not-compatibility-covered build tag -- so without this, one
-// such message anywhere in a module (e.g. a legacy conformance-test fixture)
-// would fail the whole registry and leave every other type undocumented.
-func stripMessageSets(fds *descriptorpb.FileDescriptorSet) {
+// with any now-dangling "extend" declarations against it, and returns the
+// full names of the messages it removed. protodesc.NewFiles refuses to
+// build a registry containing one at all -- MessageSet support was dropped
+// from protobuf-go's default build, gated behind an unstable, explicitly
+// not-compatibility-covered build tag -- so without this, one such message
+// anywhere in a module (e.g. a legacy conformance-test fixture) would fail
+// the whole registry and leave every other type undocumented.
+func stripMessageSets(fds *descriptorpb.FileDescriptorSet) []string {
 	removed := make(map[string]bool)
 
 	var collect func(prefix string, msgs []*descriptorpb.DescriptorProto)
@@ -475,7 +491,7 @@ func stripMessageSets(fds *descriptorpb.FileDescriptorSet) {
 		collect(prefix, f.GetMessageType())
 	}
 	if len(removed) == 0 {
-		return
+		return nil
 	}
 
 	pruneExtensions := func(exts []*descriptorpb.FieldDescriptorProto) []*descriptorpb.FieldDescriptorProto {
@@ -509,6 +525,12 @@ func stripMessageSets(fds *descriptorpb.FileDescriptorSet) {
 		f.MessageType = pruneMessages(f.GetMessageType(), prefix)
 		f.Extension = pruneExtensions(f.GetExtension())
 	}
+	names := make([]string, 0, len(removed))
+	for name := range removed {
+		names = append(names, strings.TrimPrefix(name, "."))
+	}
+	slices.Sort(names)
+	return names
 }
 
 // newAuthInterceptor creates a client-only interceptor for adding authentication to requests.

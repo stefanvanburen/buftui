@@ -552,8 +552,25 @@ func TestDocsErr_ClearedOnSuccess(t *testing.T) {
 	m := newTestModel(c)
 	m.docsErr = fmt.Errorf("stale error from a previous failed compile")
 
-	m2, _ := m.Update(docsMsg(&protoregistry.Files{}))
+	m2, _ := m.Update(docsMsg{files: &protoregistry.Files{}})
 	m = m2.(model)
 
 	attest.Equal(t, m.docsErr, nil)
+}
+
+// TestDocsMsg_SkippedMessagesSurfaceAStatusMessage verifies that when
+// resolveRegistry reports skipped messages (e.g. legacy MessageSet), the
+// user is told about it via the docs list's status message, rather than
+// silently missing content with no explanation.
+func TestDocsMsg_SkippedMessagesSurfaceAStatusMessage(t *testing.T) {
+	t.Parallel()
+
+	c := startFakeServer(t)
+	m := newTestModel(c)
+
+	_, cmd := m.Update(docsMsg{files: &protoregistry.Files{}, skipped: []string{"pkg.Legacy"}})
+	attest.NotEqual(t, cmd, nil)
+
+	_, cmd = m.Update(docsMsg{files: &protoregistry.Files{}})
+	attest.Equal(t, cmd, nil)
 }

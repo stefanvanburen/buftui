@@ -88,8 +88,9 @@ func TestConformanceFixture_Proto2Legacy(t *testing.T) {
 	// still refuses the whole set outright.
 	fdsBytes, err := proto.Marshal(&descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{fdp}})
 	attest.Ok(t, err, attest.Fatal())
-	files, err := resolveRegistry(fdsBytes)
+	files, skipped, err := resolveRegistry(fdsBytes)
 	attest.Ok(t, err, attest.Fatal())
+	attest.Equal(t, skipped, []string{"fixture.proto2.Legacy"})
 	items := packagesFromDocs(files, map[string]bool{"fixture_proto2.proto": true})
 	attest.Equal(t, len(items), 1, attest.Fatal())
 	out := renderPackage(items[0].(*docsPackage), false)

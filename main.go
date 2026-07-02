@@ -429,7 +429,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.client.compileDocs(m.currentCommitID, m.currentCommitFiles)
 
 	case docsMsg:
-		m.compiledDocs = (*protoregistry.Files)(msg)
+		m.compiledDocs = msg.files
 		m.loadingDocs = false
 		m.docsErr = nil
 		items := packagesFromDocs(m.compiledDocs, m.ownProtoFilePaths)
@@ -438,6 +438,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if pkg, ok := m.docsList.SelectedItem().(*docsPackage); ok {
 				m.docsViewport.SetContent(renderPackage(pkg, m.isDark))
 			}
+		}
+		if len(msg.skipped) > 0 {
+			// Let the user know something was intentionally omitted, rather
+			// than leaving them to wonder why a message they expected isn't
+			// documented -- currently only legacy MessageSet messages (see
+			// stripMessageSets) are ever skipped this way.
+			noun := "message"
+			if len(msg.skipped) != 1 {
+				noun = "messages"
+			}
+			note := fmt.Sprintf("Skipped %d legacy MessageSet %s (unsupported): %s", len(msg.skipped), noun, strings.Join(msg.skipped, ", "))
+			return m, m.docsList.NewStatusMessage(note)
 		}
 		return m, nil
 
