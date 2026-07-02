@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/bufbuild/httplb"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/cli/browser"
 	"github.com/jdx/go-netrc"
 	"github.com/peterbourgon/ff/v4"
@@ -129,6 +131,8 @@ func run(_ context.Context, args []string) error {
 		keys:             keys,
 		currentReference: parsedReference,
 		navigateInput:    newNavigateInput(),
+		docsSearchInput:  newDocsSearchInput(),
+		docsMatchIdx:     -1,
 		remote:           remote,
 		fileViewport:     viewport.New(),
 
@@ -203,6 +207,20 @@ type model struct {
 	// running in the background for the rest of compileDocsTimeout.
 	docsCancel        context.CancelFunc
 	ownProtoFilePaths map[string]bool
+	// docsSearchActive is true while the docs-content search input is
+	// visible and capturing keys. docsMatches/docsMatchIdx persist after
+	// search closes, so "n"/"N" keep navigating matches independent of
+	// this flag.
+	docsSearchActive bool
+	docsSearchInput  textinput.Model
+	// docsMatches holds the current search's match byte-offset ranges (see
+	// docsSearchMatches), and docsMatchIdx the currently-jumped-to one
+	// (-1 if none). Scrolling is computed and applied directly (docsMatchLine
+	// + docsViewport.SetYOffset) rather than via
+	// viewport.Model.SetHighlights/EnsureVisible, which was found via live
+	// testing to compute the wrong line for realistically complex content.
+	docsMatches  [][]int
+	docsMatchIdx int
 
 	// Tab state
 	activeCommitTab commitTab
@@ -450,6 +468,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.docsCancel = nil
 		items := packagesFromDocs(m.compiledDocs, m.ownProtoFilePaths)
 		m.docsList.SetItems(items)
+		m.docsMatches = nil
+		m.docsMatchIdx = -1
 		if len(items) > 0 {
 			if pkg, ok := m.docsList.SelectedItem().(*docsPackage); ok {
 				m.docsViewport.SetContent(renderPackage(pkg, m.isDark))
@@ -548,6 +568,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key.Matches(msg, m.keys.Quit) {
 			return m, tea.Quit
 		}
+		// While the docs search input is active, it owns all keys except
+		// esc (cancel) and enter (run the search and close the input;
+		// matches persist afterward for n/N to navigate).
+		if m.docsSearchActive {
+			switch {
+			case key.Matches(msg, m.keys.Back):
+				m.docsSearchActive = false
+				m.docsMatches = nil
+				m.docsMatchIdx = -1
+				return m, nil
+			case key.Matches(msg, m.keys.Enter):
+				m.docsSearchActive = false
+				m.docsMatches = docsSearchMatches(m.docsViewport.GetContent(), m.docsSearchInput.Value())
+				m.docsMatchIdx = -1
+				if len(m.docsMatches) > 0 {
+					m.docsMatchIdx = 0
+					m.jumpToDocsMatch()
+				}
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.docsSearchInput, cmd = m.docsSearchInput.Update(msg)
+			return m, cmd
+		}
 		// When a list is actively filtering, pass all keys through to it
 		// rather than handling our own keybindings.
 		if m.activeListIsFiltering() {
@@ -556,6 +600,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
+
+		case key.Matches(msg, m.keys.Search):
+			if m.state == modelStateBrowsingCommitFileContents && m.activeCommitTab == commitTabDocs {
+				m.docsSearchActive = true
+				m.docsSearchInput.Reset()
+				m.docsSearchInput.Focus()
+				return m, nil
+			}
+
+		case key.Matches(msg, m.keys.SearchNext):
+			if m.state == modelStateBrowsingCommitFileContents && m.activeCommitTab == commitTabDocs && len(m.docsMatches) > 0 {
+				m.docsMatchIdx = (m.docsMatchIdx + 1) % len(m.docsMatches)
+				m.jumpToDocsMatch()
+				return m, nil
+			}
+
+		case key.Matches(msg, m.keys.SearchPrev):
+			if m.state == modelStateBrowsingCommitFileContents && m.activeCommitTab == commitTabDocs && len(m.docsMatches) > 0 {
+				m.docsMatchIdx = (m.docsMatchIdx - 1 + len(m.docsMatches)) % len(m.docsMatches)
+				m.jumpToDocsMatch()
+				return m, nil
+			}
 
 		case key.Matches(msg, m.keys.TabLeft):
 			if m.state == modelStateBrowsingCommitContents || m.state == modelStateBrowsingCommitFileContents {
@@ -841,6 +907,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.docsList, cmd = m.docsList.Update(msg)
 			if m.docsList.Index() != prevIdx {
 				if pkg, ok := m.docsList.SelectedItem().(*docsPackage); ok {
+					m.docsMatches = nil
+					m.docsMatchIdx = -1
 					m.docsViewport.SetContent(renderPackage(pkg, m.isDark))
 					m.docsViewport.GotoTop()
 				}
@@ -953,6 +1021,9 @@ func (m model) View() tea.View {
 					m.docsList.View(),
 					docsViewStyle.Render(m.docsViewport.View()),
 				)
+				if m.docsSearchActive {
+					contentView += "\n/" + m.docsSearchInput.View()
+				}
 			}
 		}
 
@@ -1221,4 +1292,36 @@ func (m *model) loadTabIfNeeded() tea.Cmd {
 		return m.client.listLabels(m.currentOwner, m.currentModule)
 	}
 	return nil
+}
+
+// jumpToDocsMatch scrolls docsViewport so the match at docsMatches[docsMatchIdx]
+// is visible, with a few lines of leading context, doing nothing if
+// docsMatchIdx is out of range.
+func (m *model) jumpToDocsMatch() {
+	if m.docsMatchIdx < 0 || m.docsMatchIdx >= len(m.docsMatches) {
+		return
+	}
+	line := docsMatchLine(m.docsViewport.GetContent(), m.docsMatches[m.docsMatchIdx][0])
+	m.docsViewport.SetYOffset(max(0, line-3))
+}
+
+// docsSearchMatches finds every case-insensitive occurrence of query in the
+// ANSI-stripped rendering of content, returning byte-offset ranges in that
+// stripped text (see docsMatchLine for turning one into a scroll target).
+func docsSearchMatches(content, query string) [][]int {
+	if query == "" {
+		return nil
+	}
+	re, err := regexp.Compile("(?i)" + regexp.QuoteMeta(query))
+	if err != nil {
+		return nil
+	}
+	return re.FindAllStringIndex(ansi.Strip(content), -1)
+}
+
+// docsMatchLine returns the 0-indexed line number containing byte offset
+// (as returned by docsSearchMatches) in the ANSI-stripped rendering of
+// content, by counting newlines up to that point.
+func docsMatchLine(content string, byteOffset int) int {
+	return strings.Count(ansi.Strip(content)[:byteOffset], "\n")
 }

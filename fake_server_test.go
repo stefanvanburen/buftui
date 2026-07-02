@@ -302,8 +302,11 @@ func newTestModel(c *client) model {
 		keys:             keys,
 		currentReference: nil,
 		navigateInput:    newNavigateInput(),
+		docsSearchInput:  newDocsSearchInput(),
+		docsMatchIdx:     -1,
 		remote:           "buf.build",
 		fileViewport:     viewport.New(),
+		docsViewport:     viewport.New(),
 
 		moduleList:      moduleList,
 		commitList:      commitList,
@@ -705,4 +708,52 @@ func TestCompileDocs_CachesByCommitID(t *testing.T) {
 	_, ok = msg3.(docsMsg)
 	attest.True(t, ok, attest.Sprintf("expected a different commit's compile to succeed, got %T: %v", msg3, msg3))
 	attest.Equal(t, graphHandler.calls.Load(), int32(2), attest.Sprintf("a different commit ID must not be served from another commit's cache entry"))
+}
+
+// TestDocsSearch_ActivateAndSubmit verifies the "/" search input activates
+// only while a docs package is being viewed, that submitting a query closes
+// the input, and that n/N (highlight navigation) don't panic once matches
+// are set.
+func TestDocsSearch_ActivateAndSubmit(t *testing.T) {
+	t.Parallel()
+
+	c := startFakeServer(t)
+	m := newTestModel(c)
+	m.state = modelStateBrowsingCommitFileContents
+	m.activeCommitTab = commitTabDocs
+	m.docsViewport.SetWidth(80)
+	m.docsViewport.SetHeight(20)
+
+	// First match on line 0 (visible without scrolling), second on line 39
+	// (well past the 20-line-tall viewport, so reaching it via "n" only
+	// works if the scroll position actually gets updated).
+	lines := make([]string, 40)
+	for i := range lines {
+		lines[i] = "padding line"
+	}
+	lines[0] = "findme first"
+	lines[39] = "findme second"
+	content := strings.Join(lines, "\n")
+	m.docsViewport.SetContent(content)
+
+	m2, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+	m = m2.(model)
+	attest.True(t, m.docsSearchActive, attest.Sprintf("expected \"/\" to activate the docs search input while viewing a package"))
+
+	m.docsSearchInput.SetValue("findme")
+
+	m2, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = m2.(model)
+	attest.False(t, m.docsSearchActive, attest.Sprintf("search input should close after submitting a query"))
+	attest.Equal(t, len(m.docsMatches), 2, attest.Sprintf("expected 2 matches, got %v", m.docsMatches))
+	attest.Equal(t, m.docsMatchIdx, 0, attest.Sprintf("should jump to the first match on submit"))
+
+	m2, _ = m.Update(tea.KeyPressMsg{Code: 'n', Text: "n"})
+	m = m2.(model)
+	attest.Equal(t, m.docsMatchIdx, 1, attest.Sprintf("n should advance to the second match"))
+	attest.True(t, m.docsViewport.YOffset() > 0, attest.Sprintf("expected the viewport to scroll down to reveal the second match (line 39), stayed at yoffset=%d", m.docsViewport.YOffset()))
+
+	m2, _ = m.Update(tea.KeyPressMsg{Code: 'N', Text: "N"})
+	m = m2.(model)
+	attest.Equal(t, m.docsMatchIdx, 0, attest.Sprintf("N should wrap back to the first match"))
 }

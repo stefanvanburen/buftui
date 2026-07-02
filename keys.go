@@ -12,19 +12,22 @@ import (
 // keyMap defines a set of keybindings. To work for help it must satisfy
 // key.Map. It could also very easily be a map[string]key.Binding.
 type keyMap struct {
-	Up       key.Binding
-	Down     key.Binding
-	Left     key.Binding
-	Right    key.Binding
-	Back     key.Binding
-	Navigate key.Binding
-	Enter    key.Binding
-	Help     key.Binding
-	Quit     key.Binding
-	Browse   key.Binding
-	Yank     key.Binding
-	TabLeft  key.Binding
-	TabRight key.Binding
+	Up         key.Binding
+	Down       key.Binding
+	Left       key.Binding
+	Right      key.Binding
+	Back       key.Binding
+	Navigate   key.Binding
+	Enter      key.Binding
+	Help       key.Binding
+	Quit       key.Binding
+	Browse     key.Binding
+	Yank       key.Binding
+	TabLeft    key.Binding
+	TabRight   key.Binding
+	Search     key.Binding
+	SearchNext key.Binding
+	SearchPrev key.Binding
 }
 
 var keys = keyMap{
@@ -82,6 +85,18 @@ var keys = keyMap{
 		key.WithKeys("]"),
 		key.WithHelp("]", "next tab"),
 	),
+	Search: key.NewBinding(
+		key.WithKeys("/"),
+		key.WithHelp("/", "search"),
+	),
+	SearchNext: key.NewBinding(
+		key.WithKeys("n"),
+		key.WithHelp("n", "next match"),
+	),
+	SearchPrev: key.NewBinding(
+		key.WithKeys("N"),
+		key.WithHelp("N", "prev match"),
+	),
 }
 
 func (m model) ShortHelp() []key.Binding {
@@ -115,7 +130,14 @@ func (m model) ShortHelp() []key.Binding {
 		}
 	case modelStateBrowsingCommitFileContents:
 		if m.activeCommitTab == commitTabDocs {
-			shortHelp = []key.Binding{keys.Up, keys.Down, keys.Back, keys.TabLeft, keys.TabRight}
+			if m.docsSearchActive {
+				shortHelp = []key.Binding{
+					key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "search")),
+					keys.Back,
+				}
+			} else {
+				shortHelp = []key.Binding{keys.Up, keys.Down, keys.Back, keys.Search, keys.SearchNext, keys.SearchPrev, keys.TabLeft, keys.TabRight}
+			}
 		} else {
 			shortHelp = []key.Binding{keys.Up, keys.Down, keys.Back, keys.Yank, keys.TabLeft, keys.TabRight}
 		}
@@ -162,5 +184,11 @@ func newNavigateInput() textinput.Model {
 	input.ShowSuggestions = true
 	input.Focus()
 	input.Placeholder = "bufbuild/registry:main"
+	return input
+}
+
+func newDocsSearchInput() textinput.Model {
+	input := textinput.New()
+	input.Placeholder = "search docs"
 	return input
 }
