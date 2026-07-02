@@ -447,7 +447,11 @@ func renderMethod(m protoreflect.MethodDescriptor, typeStyle, dimStyle, commentS
 func renderField(f protoreflect.FieldDescriptor, typeStyle, dimStyle, commentStyle lipgloss.Style) string {
 	var b strings.Builder
 	typeName := fieldTypeName(f)
-	if f.Kind() == protoreflect.GroupKind {
+	if f.Kind() == protoreflect.GroupKind && f.ParentFile().Syntax() == protoreflect.Proto2 {
+		// GroupKind is also how protoreflect reports an Editions field with
+		// message_encoding=DELIMITED, but Editions has no "group" keyword --
+		// files using proto3 or Editions syntax can't contain a GroupDecl at
+		// all -- so that case renders as an ordinary message field instead.
 		typeName = "group " + typeName
 	}
 	switch {

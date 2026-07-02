@@ -1176,6 +1176,52 @@ func TestRenderField_Group(t *testing.T) {
 	attest.True(t, strings.Contains(out, "result = 1"), attest.Sprintf("group field name/number missing: %q", out))
 }
 
+func TestRenderField_EditionsDelimitedEncoding(t *testing.T) {
+	t.Parallel()
+
+	// Under Editions, message_encoding=DELIMITED reuses group-like wire
+	// encoding but through ordinary message-field source syntax -- there is
+	// no "group" keyword in Editions (files using proto3 or Editions syntax
+	// aren't allowed GroupDecl at all). protoreflect still reports
+	// Kind()==GroupKind for these fields, so naively keying off Kind() alone
+	// would render the invalid/misleading "group Detail detail = 1" instead
+	// of the real source form "Detail detail = 1".
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:    new("delim.proto"),
+		Syntax:  new("editions"),
+		Edition: descriptorpb.Edition_EDITION_2023.Enum(),
+		Package: new("delim"),
+		MessageType: []*descriptorpb.DescriptorProto{{
+			Name: new("M"),
+			Field: []*descriptorpb.FieldDescriptorProto{
+				{
+					Name:     new("detail"),
+					Number:   new(int32(1)),
+					Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+					Type:     descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
+					TypeName: new(".delim.Detail"),
+					Options: &descriptorpb.FieldOptions{
+						Features: &descriptorpb.FeatureSet{MessageEncoding: descriptorpb.FeatureSet_DELIMITED.Enum()},
+					},
+				},
+			},
+		}, {
+			Name: new("Detail"),
+			Field: []*descriptorpb.FieldDescriptorProto{
+				{Name: new("url"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+			},
+		}},
+	}
+
+	files := buildTestRegistry(t, fdp)
+	items := packagesFromDocs(files, map[string]bool{"delim.proto": true})
+	out := renderPackage(items[0].(*docsPackage), false)
+
+	attest.False(t, strings.Contains(out, "group"), attest.Sprintf("Editions delimited field should not use the (invalid) 'group' keyword: %q", out))
+	attest.True(t, strings.Contains(out, "Detail"), attest.Sprintf("delimited field's message type missing: %q", out))
+	attest.True(t, strings.Contains(out, "detail = 1"), attest.Sprintf("delimited field name/number missing: %q", out))
+}
+
 func TestRenderPackage_Proto3OptionalField(t *testing.T) {
 	t.Parallel()
 
