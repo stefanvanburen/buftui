@@ -461,6 +461,11 @@ func TestErrorRecovery(t *testing.T) {
 			c := startFakeServer(t)
 			m := newTestModel(c)
 			m.state = tt.initialState
+			// A docs-compile error (e.g. a schema using a feature protodesc
+			// can't build, like the legacy MessageSet wire format) must not
+			// leave the docs tab spinning forever -- loadingDocs should be
+			// cleared on any error, not just the docsMsg success path.
+			m.loadingDocs = true
 
 			m2, _ := m.Update(errMsg{err: injected})
 			m = m2.(model)
@@ -469,6 +474,7 @@ func TestErrorRecovery(t *testing.T) {
 			attest.Equal(t, m.err, nil)
 			// Must land in the expected state.
 			attest.Equal(t, m.state, tt.wantState)
+			attest.False(t, m.loadingDocs, attest.Sprintf("loadingDocs should be cleared after any error, leaving the docs tab stuck spinning otherwise"))
 			// Navigate errors must be surfaced via navigateErr, not m.err.
 			if tt.wantNavigateErr {
 				attest.NotEqual(t, m.navigateErr, nil)

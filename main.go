@@ -467,6 +467,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case errMsg:
+		// A docs-compile failure (e.g. a schema using a feature protodesc
+		// can't build, like the legacy MessageSet wire format) is just one
+		// of many possible sources of an errMsg, and isn't tied to a
+		// specific m.state below -- so it must be cleared unconditionally
+		// here, or the docs tab is left spinning forever with no way to
+		// tell the user what went wrong.
+		m.loadingDocs = false
 		errStr := lipgloss.NewStyle().Foreground(colorError).Render(msg.err.Error())
 		switch m.state {
 		case modelStateLoadingModules, modelStateBrowsingModules:
