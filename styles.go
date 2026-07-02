@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	bufBlue  = "#0e5df5"
-	bufTeal  = "#5fdcff"
+	bufBlue   = "#0e5df5"
+	bufTeal   = "#5fdcff"
 	errorRed  = "#cc0000"
 	errorPink = "#ff6666"
 )

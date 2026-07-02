@@ -10,7 +10,7 @@ import (
 type commitTab int
 
 const (
-	commitTabDocs    commitTab = iota
+	commitTabDocs commitTab = iota
 	commitTabFiles
 	commitTabLabels
 	commitTabCount // sentinel for wrapping

@@ -25,11 +25,11 @@ import (
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/bufbuild/httplb"
-	"google.golang.org/protobuf/reflect/protoregistry"
 	"github.com/cli/browser"
 	"github.com/jdx/go-netrc"
 	"github.com/peterbourgon/ff/v4"
 	"github.com/peterbourgon/ff/v4/ffhelp"
+	"google.golang.org/protobuf/reflect/protoregistry"
 )
 
 const (
@@ -178,20 +178,20 @@ type model struct {
 	navigateErr error
 
 	// State-related data
-	currentOwner         string
-	currentModule        string
+	currentOwner            string
+	currentModule           string
 	currentDefaultLabelName string
-	currentCommitID      string
-	currentModules       modulesMsg
-	currentCommits       []*modulev1.Commit
-	nextCommitsPageToken string
-	loadingMoreCommits   bool
-	currentCommitFiles   []*modulev1.File
-	currentReference     *modulev1.ResourceRef_Name
-	currentLabels        []*modulev1.Label
-	loadingLabels        bool
-	compiledDocs         *protoregistry.Files
-	loadingDocs          bool
+	currentCommitID         string
+	currentModules          modulesMsg
+	currentCommits          []*modulev1.Commit
+	nextCommitsPageToken    string
+	loadingMoreCommits      bool
+	currentCommitFiles      []*modulev1.File
+	currentReference        *modulev1.ResourceRef_Name
+	currentLabels           []*modulev1.Label
+	loadingLabels           bool
+	compiledDocs            *protoregistry.Files
+	loadingDocs             bool
 	// docsErr holds the error from the most recent failed compileDocs
 	// attempt, so the docs tab can show it instead of falling back to the
 	// misleading "No proto files found" (as if the module were genuinely
@@ -816,10 +816,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			prevIdx := m.docsList.Index()
 			m.docsList, cmd = m.docsList.Update(msg)
 			if m.docsList.Index() != prevIdx {
-			if pkg, ok := m.docsList.SelectedItem().(*docsPackage); ok {
-				m.docsViewport.SetContent(renderPackage(pkg, m.isDark))
-				m.docsViewport.GotoTop()
-			}
+				if pkg, ok := m.docsList.SelectedItem().(*docsPackage); ok {
+					m.docsViewport.SetContent(renderPackage(pkg, m.isDark))
+					m.docsViewport.GotoTop()
+				}
 			}
 		}
 	case modelStateBrowsingCommitFileContents:

@@ -446,9 +446,9 @@ func TestErrorRecovery(t *testing.T) {
 	injected := fmt.Errorf("injected failure")
 
 	tests := []struct {
-		name          string
-		initialState  modelState
-		wantState     modelState
+		name            string
+		initialState    modelState
+		wantState       modelState
 		wantNavigateErr bool
 	}{
 		{
