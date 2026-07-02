@@ -21,15 +21,21 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// fakeModuleServiceHandler implements the ModuleService for testing.
+// fakeModuleServiceHandler implements the ModuleService for testing. delay,
+// if set, is slept before responding -- used to simulate a slow/hanging
+// server for RPC timeout tests.
 type fakeModuleServiceHandler struct {
 	modulev1connect.UnimplementedModuleServiceHandler
+	delay time.Duration
 }
 
 func (f *fakeModuleServiceHandler) ListModules(
 	ctx context.Context,
 	req *connect.Request[modulev1.ListModulesRequest],
 ) (*connect.Response[modulev1.ListModulesResponse], error) {
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 	modules := []*modulev1.Module{
 		{
 			Id:          "mod1",
@@ -193,6 +199,26 @@ func startFakeServer(t *testing.T) *client {
 		commitServiceClient:   modulev1connect.NewCommitServiceClient(server.Client(), "https://example.com"),
 		downloadServiceClient: modulev1connect.NewDownloadServiceClient(server.Client(), "https://example.com"),
 		resourceServiceClient: modulev1connect.NewResourceServiceClient(server.Client(), "https://example.com"),
+	}
+}
+
+// startFakeServerWithSlowModuleList is like startFakeServer, but ListModules
+// blocks for delay before responding -- used to simulate a slow/hanging BSR
+// backend for RPC timeout tests.
+func startFakeServerWithSlowModuleList(t *testing.T, delay time.Duration) *client {
+	t.Helper()
+
+	mux := http.NewServeMux()
+	mux.Handle(modulev1connect.NewModuleServiceHandler(&fakeModuleServiceHandler{delay: delay}))
+
+	server, err := memhttp.New(mux)
+	attest.Ok(t, err, attest.Fatal())
+	t.Cleanup(func() {
+		attest.Ok(t, server.Close())
+	})
+
+	return &client{
+		moduleServiceClient: modulev1connect.NewModuleServiceClient(server.Client(), "https://example.com"),
 	}
 }
 
@@ -483,4 +509,26 @@ func TestErrorRecovery(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestListModules_TimesOut verifies that a slow/hanging BSR backend can't
+// block the app forever: every RPC call must carry a bounded deadline
+// rather than context.Background(), or a single stalled response leaves the
+// UI stuck with no way to recover (as found live against
+// buf.build/svanburen/protobuf-conformance, though that specific case turned
+// out to be a fast error rather than a true hang).
+func TestListModules_TimesOut(t *testing.T) {
+	orig := rpcTimeout
+	rpcTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { rpcTimeout = orig })
+
+	c := startFakeServerWithSlowModuleList(t, 2*time.Second)
+
+	start := time.Now()
+	msg := c.listModules("someowner")()
+	elapsed := time.Since(start)
+
+	_, ok := msg.(errMsg)
+	attest.True(t, ok, attest.Sprintf("expected a timeout to surface as errMsg, got %T: %v", msg, msg))
+	attest.True(t, elapsed < time.Second, attest.Sprintf("expected the call to time out around rpcTimeout (50ms), took %v", elapsed))
 }

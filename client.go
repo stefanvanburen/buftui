@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/module/v1/modulev1connect"
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
@@ -23,6 +24,20 @@ import (
 )
 
 const pageSize = 250
+
+// rpcTimeout bounds a single simple RPC call (listing modules/commits/labels,
+// fetching a resource or commit content). Every BSR RPC call used to run
+// under context.Background() with no deadline at all, so a slow or hanging
+// backend response could block the whole app forever with no way to
+// recover. Var, not const, so tests can shrink it to exercise the timeout
+// path without waiting tens of seconds.
+var rpcTimeout = 30 * time.Second
+
+// compileDocsTimeout bounds the whole compileDocs pipeline (dependency graph
+// fetch, dependency download, and local compilation combined), which does
+// more work than a single simple RPC call and so gets a longer budget of
+// its own rather than reusing rpcTimeout per step.
+var compileDocsTimeout = 2 * time.Minute
 
 type client struct {
 	moduleServiceClient   modulev1connect.ModuleServiceClient
@@ -58,6 +73,8 @@ type docsMsg *protoregistry.Files
 
 func (c *client) listModules(currentOwner string) tea.Cmd {
 	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+		defer cancel()
 		var allModules []*modulev1.Module
 		pageToken := ""
 		for {
@@ -72,7 +89,7 @@ func (c *client) listModules(currentOwner string) tea.Cmd {
 					},
 				},
 			})
-			response, err := c.moduleServiceClient.ListModules(context.Background(), request)
+			response, err := c.moduleServiceClient.ListModules(ctx, request)
 			if err != nil {
 				return errMsg{fmt.Errorf("listing modules: %w", err)}
 			}
@@ -95,6 +112,8 @@ type moreCommitsMsg commitsMsg
 
 func (c *client) listCommits(currentOwner, currentModule string) tea.Cmd {
 	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+		defer cancel()
 		request := connect.NewRequest(&modulev1.ListCommitsRequest{
 			PageSize: pageSize,
 			ResourceRef: &modulev1.ResourceRef{
@@ -106,7 +125,7 @@ func (c *client) listCommits(currentOwner, currentModule string) tea.Cmd {
 				},
 			},
 		})
-		response, err := c.commitServiceClient.ListCommits(context.Background(), request)
+		response, err := c.commitServiceClient.ListCommits(ctx, request)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting commits: %w", err)}
 		}
@@ -119,6 +138,8 @@ func (c *client) listCommits(currentOwner, currentModule string) tea.Cmd {
 
 func (c *client) listMoreCommits(currentOwner, currentModule, pageToken string) tea.Cmd {
 	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+		defer cancel()
 		request := connect.NewRequest(&modulev1.ListCommitsRequest{
 			PageSize:  pageSize,
 			PageToken: pageToken,
@@ -131,7 +152,7 @@ func (c *client) listMoreCommits(currentOwner, currentModule, pageToken string) 
 				},
 			},
 		})
-		response, err := c.commitServiceClient.ListCommits(context.Background(), request)
+		response, err := c.commitServiceClient.ListCommits(ctx, request)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting more commits: %w", err)}
 		}
@@ -146,6 +167,8 @@ type contentsMsg *modulev1.DownloadResponse_Content
 
 func (c *client) getCommitContent(commitID string) tea.Cmd {
 	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+		defer cancel()
 		request := connect.NewRequest(&modulev1.DownloadRequest{
 			Values: []*modulev1.DownloadRequest_Value{
 				{
@@ -157,7 +180,7 @@ func (c *client) getCommitContent(commitID string) tea.Cmd {
 				},
 			},
 		})
-		response, err := c.downloadServiceClient.Download(context.Background(), request)
+		response, err := c.downloadServiceClient.Download(ctx, request)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting commit content: %w", err)}
 		}
@@ -177,6 +200,8 @@ type resourceMsg struct {
 
 func (c *client) getResource(resourceName *modulev1.ResourceRef_Name) tea.Cmd {
 	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+		defer cancel()
 		request := connect.NewRequest(&modulev1.GetResourcesRequest{
 			ResourceRefs: []*modulev1.ResourceRef{
 				{
@@ -186,7 +211,7 @@ func (c *client) getResource(resourceName *modulev1.ResourceRef_Name) tea.Cmd {
 				},
 			},
 		})
-		response, err := c.resourceServiceClient.GetResources(context.Background(), request)
+		response, err := c.resourceServiceClient.GetResources(ctx, request)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting resource: %w", err)}
 		}
@@ -202,6 +227,8 @@ func (c *client) getResource(resourceName *modulev1.ResourceRef_Name) tea.Cmd {
 
 func (c *client) listLabels(owner, module string) tea.Cmd {
 	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+		defer cancel()
 		var allLabels []*modulev1.Label
 		pageToken := ""
 		for {
@@ -218,7 +245,7 @@ func (c *client) listLabels(owner, module string) tea.Cmd {
 				},
 				ArchiveFilter: modulev1.ListLabelsRequest_ARCHIVE_FILTER_UNARCHIVED_ONLY,
 			})
-			response, err := c.labelServiceClient.ListLabels(context.Background(), request)
+			response, err := c.labelServiceClient.ListLabels(ctx, request)
 			if err != nil {
 				return errMsg{fmt.Errorf("listing labels: %w", err)}
 			}
@@ -234,6 +261,8 @@ func (c *client) listLabels(owner, module string) tea.Cmd {
 
 func (c *client) fetchLabelSuggestions(owner, module string) tea.Cmd {
 	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+		defer cancel()
 		request := connect.NewRequest(&modulev1.ListLabelsRequest{
 			PageSize: pageSize,
 			ResourceRef: &modulev1.ResourceRef{
@@ -246,7 +275,7 @@ func (c *client) fetchLabelSuggestions(owner, module string) tea.Cmd {
 			},
 			ArchiveFilter: modulev1.ListLabelsRequest_ARCHIVE_FILTER_UNARCHIVED_ONLY,
 		})
-		response, err := c.labelServiceClient.ListLabels(context.Background(), request)
+		response, err := c.labelServiceClient.ListLabels(ctx, request)
 		if err != nil {
 			// Suggestions are best-effort; ignore errors.
 			return navigateSuggestionsMsg(nil)
@@ -261,13 +290,15 @@ func (c *client) fetchLabelSuggestions(owner, module string) tea.Cmd {
 
 func (c *client) fetchModuleSuggestions(owner string) tea.Cmd {
 	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+		defer cancel()
 		request := connect.NewRequest(&modulev1.ListModulesRequest{
 			PageSize: pageSize,
 			OwnerRefs: []*ownerv1.OwnerRef{{
 				Value: &ownerv1.OwnerRef_Name{Name: owner},
 			}},
 		})
-		response, err := c.moduleServiceClient.ListModules(context.Background(), request)
+		response, err := c.moduleServiceClient.ListModules(ctx, request)
 		if err != nil {
 			// Suggestions are best-effort; ignore errors.
 			return navigateSuggestionsMsg(nil)
@@ -285,8 +316,10 @@ func (c *client) fetchModuleSuggestions(owner string) tea.Cmd {
 // compiler from protocompile.
 func (c *client) compileDocs(commitID string, currentFiles []*modulev1.File) tea.Cmd {
 	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), compileDocsTimeout)
+		defer cancel()
 		// 1. Get the full transitive dependency graph.
-		graphResp, err := c.graphServiceClient.GetGraph(context.Background(), connect.NewRequest(&modulev1.GetGraphRequest{
+		graphResp, err := c.graphServiceClient.GetGraph(ctx, connect.NewRequest(&modulev1.GetGraphRequest{
 			ResourceRefs: []*modulev1.ResourceRef{{
 				Value: &modulev1.ResourceRef_Id{Id: commitID},
 			}},
@@ -322,7 +355,7 @@ func (c *client) compileDocs(commitID string, currentFiles []*modulev1.File) tea
 					FileTypes: []modulev1.FileType{modulev1.FileType_FILE_TYPE_PROTO},
 				}
 			}
-			dlResp, err := c.downloadServiceClient.Download(context.Background(), connect.NewRequest(&modulev1.DownloadRequest{
+			dlResp, err := c.downloadServiceClient.Download(ctx, connect.NewRequest(&modulev1.DownloadRequest{
 				Values: values,
 			}))
 			if err != nil {
@@ -353,7 +386,7 @@ func (c *client) compileDocs(commitID string, currentFiles []*modulev1.File) tea
 				})
 			}
 		}
-		irResults, _, err := incremental.Run(context.Background(), executor, irQueries...)
+		irResults, _, err := incremental.Run(ctx, executor, irQueries...)
 		if err != nil {
 			return errMsg{fmt.Errorf("compiling protos: %w", err)}
 		}
