@@ -800,6 +800,54 @@ func TestRenderPackage_NoFileFeatureOverrides(t *testing.T) {
 	attest.False(t, strings.Contains(out, "features."), attest.Sprintf("no feature overrides should be shown: %q", out))
 }
 
+func TestRenderPackage_MessageEnumServiceFeatureOverrides(t *testing.T) {
+	t.Parallel()
+
+	// A message, enum, or service can each explicitly override a feature
+	// for everything nested inside it -- e.g. a message overriding
+	// field_presence for all its own fields, or an enum overriding its own
+	// enum_type -- with no file-level trace of it. Unlike a field's own
+	// field_presence (already conveyed by the optional keyword or its
+	// absence), there's no other rendering hint that a message/enum/service
+	// declared one of these, so it needs its own annotation.
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:    new("msgfeat.proto"),
+		Syntax:  new("editions"),
+		Edition: descriptorpb.Edition_EDITION_2023.Enum(),
+		Package: new("msgfeat"),
+		MessageType: []*descriptorpb.DescriptorProto{{
+			Name: new("M"),
+			Options: &descriptorpb.MessageOptions{
+				Features: &descriptorpb.FeatureSet{FieldPresence: descriptorpb.FeatureSet_IMPLICIT.Enum()},
+			},
+			Field: []*descriptorpb.FieldDescriptorProto{
+				{Name: new("f"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+			},
+		}},
+		EnumType: []*descriptorpb.EnumDescriptorProto{{
+			Name: new("E"),
+			Options: &descriptorpb.EnumOptions{
+				Features: &descriptorpb.FeatureSet{EnumType: descriptorpb.FeatureSet_CLOSED.Enum()},
+			},
+			Value: []*descriptorpb.EnumValueDescriptorProto{{Name: new("E_UNSPECIFIED"), Number: new(int32(0))}},
+		}},
+		Service: []*descriptorpb.ServiceDescriptorProto{{
+			Name: new("S"),
+			Options: &descriptorpb.ServiceOptions{
+				Features: &descriptorpb.FeatureSet{Utf8Validation: descriptorpb.FeatureSet_NONE.Enum()},
+			},
+		}},
+	}
+
+	files := buildTestRegistry(t, fdp)
+	items := packagesFromDocs(files, map[string]bool{"msgfeat.proto": true})
+	out := renderPackage(items[0].(*docsPackage), false)
+
+	attest.True(t, strings.Contains(out, "features.field_presence = IMPLICIT"), attest.Sprintf("message-level feature override missing: %q", out))
+	attest.True(t, strings.Contains(out, "features.enum_type = CLOSED"), attest.Sprintf("enum-level feature override missing: %q", out))
+	attest.True(t, strings.Contains(out, "features.utf8_validation = NONE"), attest.Sprintf("service-level feature override missing: %q", out))
+}
+
 func TestRenderPackage_RequiredField(t *testing.T) {
 	t.Parallel()
 

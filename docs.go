@@ -192,6 +192,9 @@ func renderPackage(p *docsPackage, isDark bool) string {
 		if vis := symbolVisibility(d); vis != "" {
 			s += "  " + dimStyle.Render("["+vis+"]")
 		}
+		if feat := descriptorFeatureOverrides(d); feat != "" {
+			s += "  " + dimStyle.Render(feat)
+		}
 		if custom := customOptionsAnnotation(d.Options(), resolver); custom != "" {
 			s += "  " + dimStyle.Render(custom)
 		}
@@ -681,7 +684,39 @@ func fileFeatureOverrides(fd protoreflect.FileDescriptor) string {
 	if !ok || opts == nil {
 		return ""
 	}
-	feats := opts.GetFeatures()
+	return featureSetOverrides(opts.GetFeatures())
+}
+
+// descriptorFeatureOverrides is fileFeatureOverrides' counterpart for
+// messages, enums, and services: each can independently override a feature
+// for everything nested inside it (e.g. a message overriding field_presence
+// for all its own fields, or an enum overriding its own enum_type), with no
+// other trace of it in the rendered output -- unlike a field's own
+// field_presence, which is already conveyed by the optional keyword or its
+// absence, there's nothing else that would tell a reader why a message,
+// enum, or service's contents deviate from the file/edition defaults.
+func descriptorFeatureOverrides(d protoreflect.Descriptor) string {
+	var feats *descriptorpb.FeatureSet
+	switch opts := d.Options().(type) {
+	case *descriptorpb.MessageOptions:
+		feats = opts.GetFeatures()
+	case *descriptorpb.EnumOptions:
+		feats = opts.GetFeatures()
+	case *descriptorpb.ServiceOptions:
+		feats = opts.GetFeatures()
+	}
+	return featureSetOverrides(feats)
+}
+
+// featureSetOverrides formats every explicitly-populated field of feats as
+// a "[features.foo = X, features.bar = Y]" annotation, or "" if feats is nil
+// or has nothing explicitly set. FeatureSet fields are sparse -- populated
+// only when explicitly overridden at this exact scope, as opposed to merely
+// having a resolved value inherited from an ancestor's default -- so
+// ranging over the populated fields directly (the same technique
+// customOptionsAnnotation uses for extensions) finds exactly the
+// author-written overrides without hardcoding each of the current features.
+func featureSetOverrides(feats *descriptorpb.FeatureSet) string {
 	if feats == nil {
 		return ""
 	}
