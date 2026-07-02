@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/module/v1/modulev1connect"
@@ -40,6 +41,17 @@ var rpcTimeout = 30 * time.Second
 // its own rather than reusing rpcTimeout per step.
 var compileDocsTimeout = 2 * time.Minute
 
+// docsCacheMaxEntries bounds how many compiled commits are kept in memory at
+// once, evicting the oldest when exceeded, so a long session browsing many
+// different commits doesn't grow the cache unboundedly.
+const docsCacheMaxEntries = 16
+
+// docsCacheEntry is a cached compileDocs result for one commit.
+type docsCacheEntry struct {
+	files   *protoregistry.Files
+	skipped []string
+}
+
 type client struct {
 	moduleServiceClient   modulev1connect.ModuleServiceClient
 	commitServiceClient   modulev1connect.CommitServiceClient
@@ -47,6 +59,15 @@ type client struct {
 	resourceServiceClient modulev1connect.ResourceServiceClient
 	labelServiceClient    modulev1connect.LabelServiceClient
 	graphServiceClient    modulev1connect.GraphServiceClient
+
+	// docsCache holds compiled docs keyed by commit ID. Commits are
+	// immutable on the BSR, so a cached entry never needs invalidating --
+	// backtracking to a previously-viewed commit is served instantly
+	// instead of repeating the full graph-fetch+download+compile pipeline.
+	// docsCacheOrder tracks insertion order for simple FIFO eviction.
+	docsCacheMu    sync.Mutex
+	docsCache      map[string]docsCacheEntry
+	docsCacheOrder []string
 }
 
 func newClient(httpClient connect.HTTPClient, remote, token string) *client {
@@ -328,6 +349,13 @@ func (c *client) fetchModuleSuggestions(owner string) tea.Cmd {
 // it running in the background for the rest of compileDocsTimeout regardless.
 func (c *client) compileDocs(ctx context.Context, commitID string, currentFiles []*modulev1.File) tea.Cmd {
 	return func() tea.Msg {
+		c.docsCacheMu.Lock()
+		cached, ok := c.docsCache[commitID]
+		c.docsCacheMu.Unlock()
+		if ok {
+			return docsMsg(cached)
+		}
+
 		// 1. Get the full transitive dependency graph.
 		graphResp, err := c.graphServiceClient.GetGraph(ctx, connect.NewRequest(&modulev1.GetGraphRequest{
 			ResourceRefs: []*modulev1.ResourceRef{{
@@ -420,6 +448,20 @@ func (c *client) compileDocs(ctx context.Context, commitID string, currentFiles 
 		if err != nil {
 			return errMsg{err}
 		}
+
+		c.docsCacheMu.Lock()
+		if c.docsCache == nil {
+			c.docsCache = make(map[string]docsCacheEntry)
+		}
+		c.docsCache[commitID] = docsCacheEntry{files: regFiles, skipped: skipped}
+		c.docsCacheOrder = append(c.docsCacheOrder, commitID)
+		if len(c.docsCacheOrder) > docsCacheMaxEntries {
+			var oldest string
+			oldest, c.docsCacheOrder = c.docsCacheOrder[0], c.docsCacheOrder[1:]
+			delete(c.docsCache, oldest)
+		}
+		c.docsCacheMu.Unlock()
+
 		return docsMsg{files: regFiles, skipped: skipped}
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -176,15 +177,18 @@ func (f *fakeResourceServiceHandler) GetResources(
 
 // fakeGraphServiceHandler implements the GraphService for testing. delay, if
 // set, is slept before responding -- used to simulate a slow/hanging server.
+// calls counts invocations, for tests asserting on caching behavior.
 type fakeGraphServiceHandler struct {
 	modulev1connect.UnimplementedGraphServiceHandler
 	delay time.Duration
+	calls atomic.Int32
 }
 
 func (f *fakeGraphServiceHandler) GetGraph(
 	ctx context.Context,
 	req *connect.Request[modulev1.GetGraphRequest],
 ) (*connect.Response[modulev1.GetGraphResponse], error) {
+	f.calls.Add(1)
 	if f.delay > 0 {
 		time.Sleep(f.delay)
 	}
@@ -242,6 +246,37 @@ func startFakeServerWithSlowModuleList(t *testing.T, delay time.Duration) *clien
 	return &client{
 		moduleServiceClient: modulev1connect.NewModuleServiceClient(server.Client(), "https://example.com"),
 	}
+}
+
+// startFakeServerForDocsCaching is like startFakeServer, but also returns
+// the graph service handler so a test can inspect how many times it was
+// actually called -- used to verify compileDocs serves a repeat request for
+// the same commit from cache instead of hitting the network again.
+func startFakeServerForDocsCaching(t *testing.T) (*client, *fakeGraphServiceHandler) {
+	t.Helper()
+
+	graphHandler := &fakeGraphServiceHandler{}
+
+	mux := http.NewServeMux()
+	mux.Handle(modulev1connect.NewModuleServiceHandler(&fakeModuleServiceHandler{}))
+	mux.Handle(modulev1connect.NewCommitServiceHandler(&fakeCommitServiceHandler{}))
+	mux.Handle(modulev1connect.NewDownloadServiceHandler(&fakeDownloadServiceHandler{}))
+	mux.Handle(modulev1connect.NewResourceServiceHandler(&fakeResourceServiceHandler{}))
+	mux.Handle(modulev1connect.NewGraphServiceHandler(graphHandler))
+
+	server, err := memhttp.New(mux)
+	attest.Ok(t, err, attest.Fatal())
+	t.Cleanup(func() {
+		attest.Ok(t, server.Close())
+	})
+
+	return &client{
+		moduleServiceClient:   modulev1connect.NewModuleServiceClient(server.Client(), "https://example.com"),
+		commitServiceClient:   modulev1connect.NewCommitServiceClient(server.Client(), "https://example.com"),
+		downloadServiceClient: modulev1connect.NewDownloadServiceClient(server.Client(), "https://example.com"),
+		resourceServiceClient: modulev1connect.NewResourceServiceClient(server.Client(), "https://example.com"),
+		graphServiceClient:    modulev1connect.NewGraphServiceClient(server.Client(), "https://example.com"),
+	}, graphHandler
 }
 
 // initialModel creates a model with a fake service client.
@@ -640,4 +675,34 @@ func TestBack_CancelsInFlightDocsCompile(t *testing.T) {
 	attest.True(t, cancelled, attest.Sprintf("expected backing out of the commit to cancel the in-flight docs compile"))
 	attest.Equal(t, m.docsCancel, nil)
 	attest.Equal(t, m.state, modelStateLoadingCommits)
+}
+
+// TestCompileDocs_CachesByCommitID verifies that a second compileDocs call
+// for the same commit is served from cache instead of repeating the full
+// graph-fetch+download+compile pipeline -- commits are immutable, so a
+// cached result never goes stale. Backtracking to a previously-viewed
+// commit should be instant rather than redoing real network+compute work.
+func TestCompileDocs_CachesByCommitID(t *testing.T) {
+	t.Parallel()
+
+	c, graphHandler := startFakeServerForDocsCaching(t)
+	files := []*modulev1.File{{
+		Path:    "test.proto",
+		Content: []byte("syntax = \"proto3\";\npackage test;\nmessage M {}\n"),
+	}}
+
+	msg1 := c.compileDocs(context.Background(), "commitA", files)()
+	_, ok := msg1.(docsMsg)
+	attest.True(t, ok, attest.Sprintf("expected the first compile to succeed, got %T: %v", msg1, msg1))
+	attest.Equal(t, graphHandler.calls.Load(), int32(1))
+
+	msg2 := c.compileDocs(context.Background(), "commitA", files)()
+	_, ok = msg2.(docsMsg)
+	attest.True(t, ok, attest.Sprintf("expected the second (cached) compile to succeed, got %T: %v", msg2, msg2))
+	attest.Equal(t, graphHandler.calls.Load(), int32(1), attest.Sprintf("repeat compile for the same commit should be served from cache, not hit the network again"))
+
+	msg3 := c.compileDocs(context.Background(), "commitB", files)()
+	_, ok = msg3.(docsMsg)
+	attest.True(t, ok, attest.Sprintf("expected a different commit's compile to succeed, got %T: %v", msg3, msg3))
+	attest.Equal(t, graphHandler.calls.Load(), int32(2), attest.Sprintf("a different commit ID must not be served from another commit's cache entry"))
 }
