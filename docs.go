@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/dynamicpb"
 )
 
 // docsPackage is a list.Item representing all top-level proto entities in a
@@ -27,6 +28,12 @@ type docsPackage struct {
 	messages   []protoreflect.MessageDescriptor
 	enums      []protoreflect.EnumDescriptor
 	extensions []protoreflect.ExtensionDescriptor
+	// resolver resolves message types (including third-party types with no
+	// generated Go package) that appear inside custom option values, so a
+	// google.protobuf.Any option value can be expanded to its compact
+	// "[type.url]{...}" form instead of falling back to raw type_url/value
+	// bytes. Shared across every docsPackage built from the same registry.
+	resolver *dynamicpb.Types
 }
 
 func (p *docsPackage) FilterValue() string { return p.name }
@@ -88,6 +95,7 @@ func plural(n int) string {
 // package by FQN.
 func packagesFromDocs(files *protoregistry.Files, ownPaths map[string]bool) []list.Item {
 	byPkg := make(map[string]*docsPackage)
+	resolver := dynamicpb.NewTypes(files)
 
 	files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
 		if !ownPaths[fd.Path()] {
@@ -95,7 +103,7 @@ func packagesFromDocs(files *protoregistry.Files, ownPaths map[string]bool) []li
 		}
 		pkg := string(fd.Package())
 		if _, ok := byPkg[pkg]; !ok {
-			p := &docsPackage{name: pkg}
+			p := &docsPackage{name: pkg, resolver: resolver}
 			if fd.Syntax() == protoreflect.Editions {
 				p.edition = editionString(protodesc.ToFileDescriptorProto(fd).GetEdition())
 			} else {
@@ -144,6 +152,7 @@ func packagesFromDocs(files *protoregistry.Files, ownPaths map[string]bool) []li
 // renderPackage renders a full documentation page for a package — all its
 // services, messages, enums, and extensions — suitable for the viewport.
 func renderPackage(p *docsPackage, isDark bool) string {
+	resolver := p.resolver
 	lightDark := lipgloss.LightDark(isDark)
 	nameStyle := lipgloss.NewStyle().Foreground(colorForeground).Bold(true)
 	ruleStyle := lipgloss.NewStyle().Foreground(lightDark(lipgloss.Color("#cccccc"), lipgloss.Color("#444444")))
@@ -175,7 +184,7 @@ func renderPackage(p *docsPackage, isDark bool) string {
 		if enum, ok := d.(protoreflect.EnumDescriptor); ok && enum.IsClosed() {
 			s += "  " + dimStyle.Render("[closed]")
 		}
-		if custom := customOptionsAnnotation(d.Options()); custom != "" {
+		if custom := customOptionsAnnotation(d.Options(), resolver); custom != "" {
 			s += "  " + dimStyle.Render(custom)
 		}
 		return s
@@ -194,7 +203,7 @@ func renderPackage(p *docsPackage, isDark bool) string {
 		b.WriteString("\n")
 		for i := range svc.Methods().Len() {
 			m := svc.Methods().Get(i)
-			b.WriteString(renderMethod(m, typeStyle, dimStyle, commentStyle))
+			b.WriteString(renderMethod(m, resolver, typeStyle, dimStyle, commentStyle))
 			b.WriteString("\n")
 		}
 	}
@@ -203,14 +212,14 @@ func renderPackage(p *docsPackage, isDark bool) string {
 		rule(string(msg.Name()) + annotate(msg))
 		writeComment(msg)
 		b.WriteString("\n")
-		renderMessageFields(&b, msg, typeStyle, dimStyle, commentStyle)
+		renderMessageFields(&b, msg, resolver, typeStyle, dimStyle, commentStyle)
 		b.WriteString("\n")
 		// Nested enum types, shown as subsections with dotted path.
-		renderNestedEnums(&b, msg, string(msg.Name()), dimStyle, commentStyle, nameStyle, ruleStyle, annotate, writeComment)
+		renderNestedEnums(&b, msg, string(msg.Name()), resolver, dimStyle, commentStyle, nameStyle, ruleStyle, annotate, writeComment)
 		// Nested extend blocks, declared directly inside this message.
-		renderNestedExtensions(&b, msg, typeStyle, dimStyle, commentStyle)
+		renderNestedExtensions(&b, msg, resolver, typeStyle, dimStyle, commentStyle)
 		// Nested message types, shown as subsections with dotted path.
-		renderNestedMessages(&b, msg, string(msg.Name()), typeStyle, dimStyle, commentStyle, nameStyle, ruleStyle, annotate, writeComment)
+		renderNestedMessages(&b, msg, string(msg.Name()), resolver, typeStyle, dimStyle, commentStyle, nameStyle, ruleStyle, annotate, writeComment)
 	}
 
 	for _, enum := range p.enums {
@@ -219,7 +228,7 @@ func renderPackage(p *docsPackage, isDark bool) string {
 		b.WriteString("\n")
 		for i := range enum.Values().Len() {
 			v := enum.Values().Get(i)
-			b.WriteString(renderEnumValue(v, enumValueAliasOf(enum, v), dimStyle, commentStyle))
+			b.WriteString(renderEnumValue(v, enumValueAliasOf(enum, v), resolver, dimStyle, commentStyle))
 		}
 		renderEnumReserved(&b, enum, dimStyle)
 		b.WriteString("\n")
@@ -230,7 +239,7 @@ func renderPackage(p *docsPackage, isDark bool) string {
 		writeComment(ext)
 		b.WriteString("\n")
 		b.WriteString(dimStyle.Render(fmt.Sprintf("extend %s {", ext.ContainingMessage().FullName())) + "\n")
-		b.WriteString("  " + renderField(ext, typeStyle, dimStyle, commentStyle))
+		b.WriteString("  " + renderField(ext, resolver, typeStyle, dimStyle, commentStyle))
 		b.WriteString(dimStyle.Render("}") + "\n\n")
 	}
 
@@ -240,14 +249,14 @@ func renderPackage(p *docsPackage, isDark bool) string {
 // renderMessageFields renders a message's own fields, oneof blocks, reserved
 // ranges/names, and extension ranges — everything about the message except
 // its nested types.
-func renderMessageFields(b *strings.Builder, msg protoreflect.MessageDescriptor, typeStyle, dimStyle, commentStyle lipgloss.Style) {
+func renderMessageFields(b *strings.Builder, msg protoreflect.MessageDescriptor, resolver *dynamicpb.Types, typeStyle, dimStyle, commentStyle lipgloss.Style) {
 	// Non-oneof fields first. proto3 `optional` fields compile to a hidden
 	// "synthetic" oneof containing just that field -- treat those as plain
 	// fields rather than surfacing the synthetic oneof as a visible block.
 	for i := range msg.Fields().Len() {
 		f := msg.Fields().Get(i)
 		if oneof := f.ContainingOneof(); oneof == nil || oneof.IsSynthetic() {
-			b.WriteString(renderField(f, typeStyle, dimStyle, commentStyle))
+			b.WriteString(renderField(f, resolver, typeStyle, dimStyle, commentStyle))
 		}
 	}
 	// Oneof blocks.
@@ -262,12 +271,12 @@ func renderMessageFields(b *strings.Builder, msg protoreflect.MessageDescriptor,
 			}
 		}
 		header := fmt.Sprintf("oneof %s {", oneof.Name())
-		if custom := customOptionsAnnotation(oneof.Options()); custom != "" {
+		if custom := customOptionsAnnotation(oneof.Options(), resolver); custom != "" {
 			header += "  " + custom
 		}
 		b.WriteString(dimStyle.Render(header) + "\n")
 		for j := range oneof.Fields().Len() {
-			b.WriteString("  " + renderField(oneof.Fields().Get(j), typeStyle, dimStyle, commentStyle))
+			b.WriteString("  " + renderField(oneof.Fields().Get(j), resolver, typeStyle, dimStyle, commentStyle))
 		}
 		b.WriteString(dimStyle.Render("}") + "\n")
 	}
@@ -290,7 +299,7 @@ func renderMessageFields(b *strings.Builder, msg protoreflect.MessageDescriptor,
 		default:
 			text = fmt.Sprintf("extensions %d to %d;", lo, hi)
 		}
-		if custom := customOptionsAnnotation(msg.ExtensionRangeOptions(i)); custom != "" {
+		if custom := customOptionsAnnotation(msg.ExtensionRangeOptions(i), resolver); custom != "" {
 			text += "  " + custom
 		}
 		b.WriteString(dimStyle.Render(text) + "\n")
@@ -343,6 +352,7 @@ func renderNestedEnums(
 	b *strings.Builder,
 	msg protoreflect.MessageDescriptor,
 	path string,
+	resolver *dynamicpb.Types,
 	dimStyle, commentStyle, nameStyle, ruleStyle lipgloss.Style,
 	annotateFn func(protoreflect.Descriptor) string,
 	writeCommentFn func(protoreflect.Descriptor),
@@ -356,7 +366,7 @@ func renderNestedEnums(
 		b.WriteString("\n")
 		for j := range enum.Values().Len() {
 			v := enum.Values().Get(j)
-			b.WriteString(renderEnumValue(v, enumValueAliasOf(enum, v), dimStyle, commentStyle))
+			b.WriteString(renderEnumValue(v, enumValueAliasOf(enum, v), resolver, dimStyle, commentStyle))
 		}
 		renderEnumReserved(b, enum, dimStyle)
 		b.WriteString("\n")
@@ -364,11 +374,11 @@ func renderNestedEnums(
 }
 
 // renderNestedExtensions renders extend blocks declared directly inside msg.
-func renderNestedExtensions(b *strings.Builder, msg protoreflect.MessageDescriptor, typeStyle, dimStyle, commentStyle lipgloss.Style) {
+func renderNestedExtensions(b *strings.Builder, msg protoreflect.MessageDescriptor, resolver *dynamicpb.Types, typeStyle, dimStyle, commentStyle lipgloss.Style) {
 	for i := range msg.Extensions().Len() {
 		ext := msg.Extensions().Get(i)
 		b.WriteString(dimStyle.Render(fmt.Sprintf("extend %s {", ext.ContainingMessage().FullName())) + "\n")
-		b.WriteString("  " + renderField(ext, typeStyle, dimStyle, commentStyle))
+		b.WriteString("  " + renderField(ext, resolver, typeStyle, dimStyle, commentStyle))
 		b.WriteString(dimStyle.Render("}") + "\n\n")
 	}
 }
@@ -379,6 +389,7 @@ func renderNestedMessages(
 	b *strings.Builder,
 	msg protoreflect.MessageDescriptor,
 	path string,
+	resolver *dynamicpb.Types,
 	typeStyle, dimStyle, commentStyle, nameStyle, ruleStyle lipgloss.Style,
 	annotateFn func(protoreflect.Descriptor) string,
 	writeCommentFn func(protoreflect.Descriptor),
@@ -393,15 +404,15 @@ func renderNestedMessages(
 		b.WriteString(ruleStyle.Render(strings.Repeat("─", len(subPath))) + "\n")
 		writeCommentFn(nested)
 		b.WriteString("\n")
-		renderMessageFields(b, nested, typeStyle, dimStyle, commentStyle)
+		renderMessageFields(b, nested, resolver, typeStyle, dimStyle, commentStyle)
 		b.WriteString("\n")
-		renderNestedEnums(b, nested, subPath, dimStyle, commentStyle, nameStyle, ruleStyle, annotateFn, writeCommentFn)
-		renderNestedExtensions(b, nested, typeStyle, dimStyle, commentStyle)
-		renderNestedMessages(b, nested, subPath, typeStyle, dimStyle, commentStyle, nameStyle, ruleStyle, annotateFn, writeCommentFn)
+		renderNestedEnums(b, nested, subPath, resolver, dimStyle, commentStyle, nameStyle, ruleStyle, annotateFn, writeCommentFn)
+		renderNestedExtensions(b, nested, resolver, typeStyle, dimStyle, commentStyle)
+		renderNestedMessages(b, nested, subPath, resolver, typeStyle, dimStyle, commentStyle, nameStyle, ruleStyle, annotateFn, writeCommentFn)
 	}
 }
 
-func renderMethod(m protoreflect.MethodDescriptor, typeStyle, dimStyle, commentStyle lipgloss.Style) string {
+func renderMethod(m protoreflect.MethodDescriptor, resolver *dynamicpb.Types, typeStyle, dimStyle, commentStyle lipgloss.Style) string {
 	var b strings.Builder
 
 	input := string(m.Input().Name())
@@ -432,7 +443,7 @@ func renderMethod(m protoreflect.MethodDescriptor, typeStyle, dimStyle, commentS
 	if len(annotations) > 0 {
 		line += "  " + dimStyle.Render("["+strings.Join(annotations, ", ")+"]")
 	}
-	if custom := customOptionsAnnotation(m.Options()); custom != "" {
+	if custom := customOptionsAnnotation(m.Options(), resolver); custom != "" {
 		line += "  " + dimStyle.Render(custom)
 	}
 	b.WriteString(line + "\n")
@@ -444,7 +455,7 @@ func renderMethod(m protoreflect.MethodDescriptor, typeStyle, dimStyle, commentS
 	return b.String()
 }
 
-func renderField(f protoreflect.FieldDescriptor, typeStyle, dimStyle, commentStyle lipgloss.Style) string {
+func renderField(f protoreflect.FieldDescriptor, resolver *dynamicpb.Types, typeStyle, dimStyle, commentStyle lipgloss.Style) string {
 	var b strings.Builder
 	typeName := fieldTypeName(f)
 	if f.Kind() == protoreflect.GroupKind && f.ParentFile().Syntax() == protoreflect.Proto2 {
@@ -472,7 +483,7 @@ func renderField(f protoreflect.FieldDescriptor, typeStyle, dimStyle, commentSty
 		f.Number(),
 	)
 	if f.HasDefault() {
-		line += "  " + dimStyle.Render(fmt.Sprintf("[default = %s]", formatSingularOptionValue(f, f.Default())))
+		line += "  " + dimStyle.Render(fmt.Sprintf("[default = %s]", formatSingularOptionValue(f, f.Default(), resolver)))
 	}
 	wantJSONName := derivedJSONName(string(f.Name()))
 	if f.IsExtension() {
@@ -494,7 +505,7 @@ func renderField(f protoreflect.FieldDescriptor, typeStyle, dimStyle, commentSty
 			line += "  " + dimStyle.Render("[debug_redact]")
 		}
 	}
-	if custom := customOptionsAnnotation(f.Options()); custom != "" {
+	if custom := customOptionsAnnotation(f.Options(), resolver); custom != "" {
 		line += "  " + dimStyle.Render(custom)
 	}
 	b.WriteString(line + "\n")
@@ -517,7 +528,7 @@ func enumValueAliasOf(enum protoreflect.EnumDescriptor, v protoreflect.EnumValue
 	return string(canonical.Name())
 }
 
-func renderEnumValue(v protoreflect.EnumValueDescriptor, aliasOf string, dimStyle, commentStyle lipgloss.Style) string {
+func renderEnumValue(v protoreflect.EnumValueDescriptor, aliasOf string, resolver *dynamicpb.Types, dimStyle, commentStyle lipgloss.Style) string {
 	var b strings.Builder
 	line := fmt.Sprintf("%s = %d", string(v.Name()), v.Number())
 	if aliasOf != "" {
@@ -526,7 +537,7 @@ func renderEnumValue(v protoreflect.EnumValueDescriptor, aliasOf string, dimStyl
 	if opts, ok := v.Options().(*descriptorpb.EnumValueOptions); ok && opts != nil && opts.GetDeprecated() {
 		line += "  " + dimStyle.Render("[deprecated]")
 	}
-	if custom := customOptionsAnnotation(v.Options()); custom != "" {
+	if custom := customOptionsAnnotation(v.Options(), resolver); custom != "" {
 		line += "  " + dimStyle.Render(custom)
 	}
 	b.WriteString(line + "\n")
@@ -596,7 +607,7 @@ func hasExplicitOption(opts protoreflect.ProtoMessage, name protoreflect.Name) b
 // listing any custom (extension) options set on opts, or "" if there are
 // none. Standard, non-extension fields (e.g. deprecated) are rendered
 // elsewhere and are intentionally excluded here to avoid duplication.
-func customOptionsAnnotation(opts protoreflect.ProtoMessage) string {
+func customOptionsAnnotation(opts protoreflect.ProtoMessage, resolver *dynamicpb.Types) string {
 	if opts == nil {
 		return ""
 	}
@@ -609,7 +620,7 @@ func customOptionsAnnotation(opts protoreflect.ProtoMessage) string {
 		if !fd.IsExtension() {
 			return true
 		}
-		parts = append(parts, fmt.Sprintf("(%s) = %s", fd.FullName(), formatOptionValue(fd, v)))
+		parts = append(parts, fmt.Sprintf("(%s) = %s", fd.FullName(), formatOptionValue(fd, v, resolver)))
 		return true
 	})
 	if len(parts) == 0 {
@@ -620,26 +631,33 @@ func customOptionsAnnotation(opts protoreflect.ProtoMessage) string {
 
 // formatOptionValue formats a single option field's value for display,
 // expanding repeated values into a bracketed list.
-func formatOptionValue(fd protoreflect.FieldDescriptor, v protoreflect.Value) string {
+func formatOptionValue(fd protoreflect.FieldDescriptor, v protoreflect.Value, resolver *dynamicpb.Types) string {
 	if fd.IsList() {
 		list := v.List()
 		parts := make([]string, list.Len())
 		for i := range list.Len() {
-			parts[i] = formatSingularOptionValue(fd, list.Get(i))
+			parts[i] = formatSingularOptionValue(fd, list.Get(i), resolver)
 		}
 		return "[" + strings.Join(parts, ", ") + "]"
 	}
-	return formatSingularOptionValue(fd, v)
+	return formatSingularOptionValue(fd, v, resolver)
 }
 
 // formatSingularOptionValue formats one scalar/message/enum option value.
 // Message-kind values are formatted with prototext, which works for
 // dynamic (unrecognized-at-compile-time) messages just as well as
-// generated ones.
-func formatSingularOptionValue(fd protoreflect.FieldDescriptor, v protoreflect.Value) string {
+// generated ones. resolver, when non-nil, lets prototext expand a
+// google.protobuf.Any value whose inner type is only known dynamically (no
+// generated Go package) into its compact "[type.url]{...}" form instead of
+// falling back to raw type_url/value bytes.
+func formatSingularOptionValue(fd protoreflect.FieldDescriptor, v protoreflect.Value, resolver *dynamicpb.Types) string {
 	switch fd.Kind() {
 	case protoreflect.MessageKind, protoreflect.GroupKind:
-		text, err := prototext.MarshalOptions{Multiline: false}.Marshal(v.Message().Interface())
+		marshalOpts := prototext.MarshalOptions{Multiline: false}
+		if resolver != nil {
+			marshalOpts.Resolver = resolver
+		}
+		text, err := marshalOpts.Marshal(v.Message().Interface())
 		if err != nil {
 			return "{ ... }"
 		}

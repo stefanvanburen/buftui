@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/dynamicpb"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 // buildTestRegistry creates a *protoregistry.Files from a FileDescriptorProto.
@@ -397,10 +398,10 @@ func TestRenderMethod_IdempotencyAndDeprecation(t *testing.T) {
 	dim := lipgloss.NewStyle()
 	comment := lipgloss.NewStyle()
 
-	plain := renderMethod(svc.Methods().Get(0), typeStyle, dim, comment)
-	readOnly := renderMethod(svc.Methods().Get(1), typeStyle, dim, comment)
-	idempotentOut := renderMethod(svc.Methods().Get(2), typeStyle, dim, comment)
-	oldMethod := renderMethod(svc.Methods().Get(3), typeStyle, dim, comment)
+	plain := renderMethod(svc.Methods().Get(0), nil, typeStyle, dim, comment)
+	readOnly := renderMethod(svc.Methods().Get(1), nil, typeStyle, dim, comment)
+	idempotentOut := renderMethod(svc.Methods().Get(2), nil, typeStyle, dim, comment)
+	oldMethod := renderMethod(svc.Methods().Get(3), nil, typeStyle, dim, comment)
 
 	attest.False(t, strings.Contains(plain, "no side effects"),
 		attest.Sprintf("plain: %q", plain))
@@ -852,7 +853,7 @@ func TestCustomOptionsAnnotation_Scalar(t *testing.T) {
 	opts := &descriptorpb.FieldOptions{}
 	proto.SetExtension(opts, extType, "hello")
 
-	got := customOptionsAnnotation(opts)
+	got := customOptionsAnnotation(opts, nil)
 	attest.True(t, strings.Contains(got, "testext.my_label"), attest.Sprintf("extension name missing: %q", got))
 	attest.True(t, strings.Contains(got, `"hello"`), attest.Sprintf("extension value missing: %q", got))
 }
@@ -866,15 +867,88 @@ func TestCustomOptionsAnnotation_Message(t *testing.T) {
 	opts := &descriptorpb.MethodOptions{}
 	proto.SetExtension(opts, extType, detailMsg)
 
-	got := customOptionsAnnotation(opts)
+	got := customOptionsAnnotation(opts, nil)
 	attest.True(t, strings.Contains(got, "testext.my_detail"), attest.Sprintf("extension name missing: %q", got))
 	attest.True(t, strings.Contains(got, "widget"), attest.Sprintf("nested message value missing: %q", got))
+}
+
+// TestCustomOptionsAnnotation_AnyResolvesDynamicType covers a custom option
+// whose value is a google.protobuf.Any wrapping a message type that only
+// exists dynamically (no generated Go package) -- exactly the situation for
+// a real third-party BSR module's custom option. prototext can only expand
+// an Any to its compact "[type.url]{...}" form if given a resolver that
+// knows about the wrapped type; without one it silently falls back to the
+// Any's own raw type_url/value fields.
+func TestCustomOptionsAnnotation_AnyResolvesDynamicType(t *testing.T) {
+	t.Parallel()
+
+	descProtoFDP := protodesc.ToFileDescriptorProto((&descriptorpb.FileOptions{}).ProtoReflect().Descriptor().ParentFile())
+	anyFDP := protodesc.ToFileDescriptorProto((&anypb.Any{}).ProtoReflect().Descriptor().ParentFile())
+
+	extFDP := &descriptorpb.FileDescriptorProto{
+		Name:       new("anyext.proto"),
+		Syntax:     new("proto3"),
+		Package:    new("anyext"),
+		Dependency: []string{"google/protobuf/descriptor.proto", "google/protobuf/any.proto"},
+		Extension: []*descriptorpb.FieldDescriptorProto{{
+			Name:     new("detail"),
+			Number:   new(int32(50020)),
+			Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+			Type:     descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
+			TypeName: new(".google.protobuf.Any"),
+			Extendee: new(".google.protobuf.MethodOptions"),
+		}},
+		MessageType: []*descriptorpb.DescriptorProto{{
+			Name: new("Detail"),
+			Field: []*descriptorpb.FieldDescriptorProto{
+				{Name: new("name"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+			},
+		}},
+	}
+
+	files, err := protodesc.NewFiles(&descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{descProtoFDP, anyFDP, extFDP}})
+	attest.Ok(t, err, attest.Fatal())
+
+	extDesc, err := files.FindDescriptorByName("anyext.detail")
+	attest.Ok(t, err, attest.Fatal())
+	extType := dynamicpb.NewExtensionType(extDesc.(protoreflect.ExtensionDescriptor))
+
+	detailDesc, err := files.FindDescriptorByName("anyext.Detail")
+	attest.Ok(t, err, attest.Fatal())
+	detailMsg := dynamicpb.NewMessage(detailDesc.(protoreflect.MessageDescriptor))
+	detailMsg.Set(detailMsg.Descriptor().Fields().ByName("name"), protoreflect.ValueOfString("widget"))
+	detailBytes, err := proto.Marshal(detailMsg)
+	attest.Ok(t, err, attest.Fatal())
+
+	anyDesc, err := files.FindDescriptorByName("google.protobuf.Any")
+	attest.Ok(t, err, attest.Fatal())
+	anyMsg := dynamicpb.NewMessage(anyDesc.(protoreflect.MessageDescriptor))
+	anyFields := anyMsg.Descriptor().Fields()
+	anyMsg.Set(anyFields.ByName("type_url"), protoreflect.ValueOfString("type.googleapis.com/anyext.Detail"))
+	anyMsg.Set(anyFields.ByName("value"), protoreflect.ValueOfBytes(detailBytes))
+
+	opts := &descriptorpb.MethodOptions{}
+	proto.SetExtension(opts, extType, anyMsg.Interface())
+
+	// Without a resolver, prototext can't expand the Any and falls back to
+	// its own raw fields -- the inner message stays serialized bytes rather
+	// than the expanded `name:"widget"` form (its bytes happen to contain
+	// the readable substring "widget", so check for the unexpanded field
+	// shape rather than mere absence of that substring).
+	withoutResolver := customOptionsAnnotation(opts, nil)
+	attest.True(t, strings.Contains(withoutResolver, "type_url"), attest.Sprintf("expected raw Any fields without a resolver: %q", withoutResolver))
+	attest.False(t, strings.Contains(withoutResolver, `name:"widget"`), attest.Sprintf("inner message shouldn't be expanded without a resolver: %q", withoutResolver))
+
+	got := customOptionsAnnotation(opts, dynamicpb.NewTypes(files))
+	attest.True(t, strings.Contains(got, "anyext.detail"), attest.Sprintf("extension name missing: %q", got))
+	attest.True(t, strings.Contains(got, `name:"widget"`), attest.Sprintf("Any value should expand to show the inner message's fields: %q", got))
+	attest.False(t, strings.Contains(got, "type_url"), attest.Sprintf("Any should be expanded, not shown as raw type_url/value: %q", got))
 }
 
 func TestCustomOptionsAnnotation_NoOptions(t *testing.T) {
 	t.Parallel()
 
-	got := customOptionsAnnotation(&descriptorpb.FieldOptions{})
+	got := customOptionsAnnotation(&descriptorpb.FieldOptions{}, nil)
 	attest.Equal(t, got, "")
 }
 
@@ -882,7 +956,7 @@ func TestCustomOptionsAnnotation_ExcludesStandardFields(t *testing.T) {
 	t.Parallel()
 
 	opts := &descriptorpb.FieldOptions{Deprecated: new(true)}
-	got := customOptionsAnnotation(opts)
+	got := customOptionsAnnotation(opts, nil)
 	attest.Equal(t, got, "", attest.Sprintf("standard (non-extension) fields should not appear: %q", got))
 }
 
