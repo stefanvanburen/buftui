@@ -809,6 +809,42 @@ func TestRenderPackage_Extension(t *testing.T) {
 	attest.True(t, strings.Contains(out, "repeated_ext"), attest.Sprintf("extension field name missing: %q", out))
 }
 
+func TestRenderPackage_TopLevelExtensionDeprecatedNotDuplicated(t *testing.T) {
+	t.Parallel()
+
+	// A top-level extension's section header and its "extend { ... }" body
+	// both render the same FieldDescriptor's annotations (deprecated, custom
+	// options) -- unlike a nested extension, which only has the body. Make
+	// sure that doesn't show [deprecated] twice.
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:    new("extdep.proto"),
+		Syntax:  new("proto2"),
+		Package: new("extdep"),
+		MessageType: []*descriptorpb.DescriptorProto{{
+			Name: new("Base"),
+			ExtensionRange: []*descriptorpb.DescriptorProto_ExtensionRange{
+				{Start: new(int32(100)), End: new(int32(200))},
+			},
+		}},
+		Extension: []*descriptorpb.FieldDescriptorProto{
+			{
+				Name:     new("old_ext"),
+				Number:   new(int32(100)),
+				Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+				Type:     descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+				Extendee: new(".extdep.Base"),
+				Options:  &descriptorpb.FieldOptions{Deprecated: new(true)},
+			},
+		},
+	}
+
+	files := buildTestRegistry(t, fdp)
+	items := packagesFromDocs(files, map[string]bool{"extdep.proto": true})
+	out := renderPackage(items[0].(*docsPackage), false)
+
+	attest.Equal(t, strings.Count(out, "deprecated"), 1, attest.Sprintf("expected exactly one deprecated marker: %q", out))
+}
+
 func TestRenderPackage_NestedExtension(t *testing.T) {
 	t.Parallel()
 

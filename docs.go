@@ -235,7 +235,12 @@ func renderPackage(p *docsPackage, isDark bool) string {
 	}
 
 	for _, ext := range p.extensions {
-		rule(string(ext.Name()) + annotate(ext))
+		// No annotate(ext) here: unlike other top-level entities, an
+		// extension's own body line (rendered by renderField below) already
+		// carries its full annotation set (deprecated, custom options, ...)
+		// for this exact same descriptor, so adding it to the header too
+		// would just duplicate it.
+		rule(string(ext.Name()))
 		writeComment(ext)
 		b.WriteString("\n")
 		b.WriteString(dimStyle.Render(fmt.Sprintf("extend %s {", ext.ContainingMessage().FullName())) + "\n")
