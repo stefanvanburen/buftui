@@ -525,6 +525,16 @@ func renderField(f protoreflect.FieldDescriptor, resolver *dynamicpb.Types, type
 		}
 	}
 	if opts, ok := f.Options().(*descriptorpb.FieldOptions); ok {
+		// Symmetric to the repeated_field_encoding fallback above: since
+		// Editions has no "group" keyword to signal delimited wire encoding,
+		// an explicit per-field message_encoding override would otherwise be
+		// completely invisible -- the field would look like an ordinary
+		// length-prefixed message field.
+		if enc := opts.GetFeatures().GetMessageEncoding(); enc != descriptorpb.FeatureSet_MESSAGE_ENCODING_UNKNOWN {
+			line += "  " + dimStyle.Render(fmt.Sprintf("[features.message_encoding = %s]", enc))
+		}
+	}
+	if opts, ok := f.Options().(*descriptorpb.FieldOptions); ok {
 		if opts.GetDeprecated() {
 			line += "  " + dimStyle.Render("[deprecated]")
 		}

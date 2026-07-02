@@ -1483,6 +1483,44 @@ func TestRenderField_EditionsDelimitedEncoding(t *testing.T) {
 	attest.False(t, strings.Contains(out, "group"), attest.Sprintf("Editions delimited field should not use the (invalid) 'group' keyword: %q", out))
 	attest.True(t, strings.Contains(out, "Detail"), attest.Sprintf("delimited field's message type missing: %q", out))
 	attest.True(t, strings.Contains(out, "detail = 1"), attest.Sprintf("delimited field name/number missing: %q", out))
+	// With no "group" keyword available to signal the non-default wire
+	// encoding, the explicit feature override needs its own annotation, or
+	// the field looks like an ordinary length-prefixed message field.
+	attest.True(t, strings.Contains(out, "[features.message_encoding = DELIMITED]"), attest.Sprintf("explicit message_encoding override missing: %q", out))
+}
+
+func TestRenderField_EditionsNoMessageEncodingOverride(t *testing.T) {
+	t.Parallel()
+
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:    new("nodelim.proto"),
+		Syntax:  new("editions"),
+		Edition: descriptorpb.Edition_EDITION_2023.Enum(),
+		Package: new("nodelim"),
+		MessageType: []*descriptorpb.DescriptorProto{{
+			Name: new("M"),
+			Field: []*descriptorpb.FieldDescriptorProto{
+				{
+					Name:     new("detail"),
+					Number:   new(int32(1)),
+					Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+					Type:     descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
+					TypeName: new(".nodelim.Detail"),
+				},
+			},
+		}, {
+			Name: new("Detail"),
+			Field: []*descriptorpb.FieldDescriptorProto{
+				{Name: new("url"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+			},
+		}},
+	}
+
+	files := buildTestRegistry(t, fdp)
+	items := packagesFromDocs(files, map[string]bool{"nodelim.proto": true})
+	out := renderPackage(items[0].(*docsPackage), false)
+
+	attest.False(t, strings.Contains(out, "message_encoding"), attest.Sprintf("field without an explicit override should not be annotated: %q", out))
 }
 
 func TestRenderPackage_Proto3OptionalField(t *testing.T) {
