@@ -166,8 +166,11 @@ func renderPackage(p *docsPackage, isDark bool) string {
 	var b strings.Builder
 
 	rule := func(name string) {
+		// name may already contain ANSI escapes from an annotate() call, so
+		// the underline must match its rendered (visible) width, not its
+		// raw byte length.
 		b.WriteString("\n" + nameStyle.Render(name) + "\n")
-		b.WriteString(ruleStyle.Render(strings.Repeat("─", len(name))) + "\n")
+		b.WriteString(ruleStyle.Render(strings.Repeat("─", lipgloss.Width(name))) + "\n")
 	}
 
 	writeComment := func(d protoreflect.Descriptor) {
@@ -374,8 +377,9 @@ func renderNestedEnums(
 	for i := range msg.Enums().Len() {
 		enum := msg.Enums().Get(i)
 		subPath := path + "." + string(enum.Name())
-		b.WriteString("\n" + nameStyle.Render(subPath+annotateFn(enum)) + "\n")
-		b.WriteString(ruleStyle.Render(strings.Repeat("─", len(subPath))) + "\n")
+		headerText := subPath + annotateFn(enum)
+		b.WriteString("\n" + nameStyle.Render(headerText) + "\n")
+		b.WriteString(ruleStyle.Render(strings.Repeat("─", lipgloss.Width(headerText))) + "\n")
 		writeCommentFn(enum)
 		b.WriteString("\n")
 		for j := range enum.Values().Len() {
@@ -414,8 +418,9 @@ func renderNestedMessages(
 			continue // synthetic map entry — not a real nested type
 		}
 		subPath := path + "." + string(nested.Name())
-		b.WriteString("\n" + nameStyle.Render(subPath+annotateFn(nested)) + "\n")
-		b.WriteString(ruleStyle.Render(strings.Repeat("─", len(subPath))) + "\n")
+		headerText := subPath + annotateFn(nested)
+		b.WriteString("\n" + nameStyle.Render(headerText) + "\n")
+		b.WriteString(ruleStyle.Render(strings.Repeat("─", lipgloss.Width(headerText))) + "\n")
 		writeCommentFn(nested)
 		b.WriteString("\n")
 		renderMessageFields(b, nested, resolver, typeStyle, dimStyle, commentStyle)

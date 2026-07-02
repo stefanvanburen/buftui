@@ -685,6 +685,76 @@ func TestRenderPackage_Edition(t *testing.T) {
 	attest.False(t, strings.Contains(out, "syntax ="), attest.Sprintf("syntax line should not be present: %q", out))
 }
 
+func TestRenderPackage_RuleUnderlineMatchesVisibleWidth(t *testing.T) {
+	t.Parallel()
+
+	// The underline beneath a section header must match the header's
+	// rendered (visible) width. Any annotation -- deprecated, closed,
+	// custom options, local/export -- wraps part of the header text in
+	// ANSI escape codes, which must not be counted as visible characters
+	// when sizing the underline.
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:    new("ruleunderline.proto"),
+		Syntax:  new("proto3"),
+		Package: new("ruleunderline"),
+		MessageType: []*descriptorpb.DescriptorProto{
+			{Name: new("Old"), Options: &descriptorpb.MessageOptions{Deprecated: new(true)}},
+		},
+	}
+
+	files := buildTestRegistry(t, fdp)
+	items := packagesFromDocs(files, map[string]bool{"ruleunderline.proto": true})
+	out := renderPackage(items[0].(*docsPackage), false)
+
+	lines := strings.Split(out, "\n")
+	var headerLine, ruleLine string
+	for i, l := range lines {
+		if strings.Contains(l, "Old") && strings.Contains(l, "[deprecated]") {
+			headerLine = l
+			ruleLine = lines[i+1]
+			break
+		}
+	}
+	attest.True(t, headerLine != "", attest.Sprintf("couldn't find the annotated header line: %q", out))
+	attest.Equal(t, lipgloss.Width(ruleLine), lipgloss.Width(headerLine), attest.Sprintf("underline width should match visible header width -- header: %q, rule: %q", headerLine, ruleLine))
+}
+
+func TestRenderPackage_NestedRuleUnderlineMatchesVisibleWidth(t *testing.T) {
+	t.Parallel()
+
+	// Same invariant as the top-level case, but for a nested message's
+	// subsection header -- which computes its underline width from the
+	// dotted path alone, entirely excluding the annotation, rather than
+	// from an ANSI-wrapped string.
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:    new("nestedruleunderline.proto"),
+		Syntax:  new("proto3"),
+		Package: new("nestedruleunderline"),
+		MessageType: []*descriptorpb.DescriptorProto{{
+			Name: new("Outer"),
+			NestedType: []*descriptorpb.DescriptorProto{
+				{Name: new("Inner"), Options: &descriptorpb.MessageOptions{Deprecated: new(true)}},
+			},
+		}},
+	}
+
+	files := buildTestRegistry(t, fdp)
+	items := packagesFromDocs(files, map[string]bool{"nestedruleunderline.proto": true})
+	out := renderPackage(items[0].(*docsPackage), false)
+
+	lines := strings.Split(out, "\n")
+	var headerLine, ruleLine string
+	for i, l := range lines {
+		if strings.Contains(l, "Outer.Inner") && strings.Contains(l, "[deprecated]") {
+			headerLine = l
+			ruleLine = lines[i+1]
+			break
+		}
+	}
+	attest.True(t, headerLine != "", attest.Sprintf("couldn't find the annotated nested header line: %q", out))
+	attest.Equal(t, lipgloss.Width(ruleLine), lipgloss.Width(headerLine), attest.Sprintf("underline width should match visible header width -- header: %q, rule: %q", headerLine, ruleLine))
+}
+
 func TestRenderPackage_FileFeatureOverrides(t *testing.T) {
 	t.Parallel()
 
