@@ -24,6 +24,7 @@ type docsPackage struct {
 	name       string
 	syntax     string
 	edition    string
+	features   string
 	services   []protoreflect.ServiceDescriptor
 	messages   []protoreflect.MessageDescriptor
 	enums      []protoreflect.EnumDescriptor
@@ -106,6 +107,7 @@ func packagesFromDocs(files *protoregistry.Files, ownPaths map[string]bool) []li
 			p := &docsPackage{name: pkg, resolver: resolver}
 			if fd.Syntax() == protoreflect.Editions {
 				p.edition = editionString(protodesc.ToFileDescriptorProto(fd).GetEdition())
+				p.features = fileFeatureOverrides(fd)
 			} else {
 				p.syntax = fd.Syntax().String()
 			}
@@ -195,7 +197,11 @@ func renderPackage(p *docsPackage, isDark bool) string {
 
 	switch {
 	case p.edition != "":
-		b.WriteString(dimStyle.Render(fmt.Sprintf("edition = %q;", p.edition)) + "\n")
+		text := fmt.Sprintf("edition = %q;", p.edition)
+		if p.features != "" {
+			text += "  " + p.features
+		}
+		b.WriteString(dimStyle.Render(text) + "\n")
 	case p.syntax != "":
 		b.WriteString(dimStyle.Render(fmt.Sprintf("syntax = %q;", p.syntax)) + "\n")
 	}
@@ -644,6 +650,36 @@ func hasExplicitOption(opts protoreflect.ProtoMessage, name protoreflect.Name) b
 		return false
 	}
 	return m.Has(fd)
+}
+
+// fileFeatureOverrides returns a "[features.foo = X, features.bar = Y]"
+// annotation listing any Editions feature explicitly overridden at the file
+// level (e.g. "option features.default_symbol_visibility = LOCAL_ALL;"),
+// or "" if the file doesn't override any. FeatureSet fields are sparse --
+// only populated when explicitly set at this exact scope, as opposed to
+// merely having a resolved effective value inherited from the edition's
+// defaults -- so ranging over the populated fields directly (the same
+// technique customOptionsAnnotation uses for extensions) finds exactly the
+// author-written overrides without hardcoding each of the current features.
+func fileFeatureOverrides(fd protoreflect.FileDescriptor) string {
+	opts, ok := fd.Options().(*descriptorpb.FileOptions)
+	if !ok || opts == nil {
+		return ""
+	}
+	feats := opts.GetFeatures()
+	if feats == nil {
+		return ""
+	}
+	m := feats.ProtoReflect()
+	var parts []string
+	m.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
+		parts = append(parts, fmt.Sprintf("features.%s = %s", fd.Name(), formatSingularOptionValue(fd, v, nil)))
+		return true
+	})
+	if len(parts) == 0 {
+		return ""
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
 }
 
 // customOptionsAnnotation returns a "[(pkg.ext) = value, ...]" annotation

@@ -685,6 +685,51 @@ func TestRenderPackage_Edition(t *testing.T) {
 	attest.False(t, strings.Contains(out, "syntax ="), attest.Sprintf("syntax line should not be present: %q", out))
 }
 
+func TestRenderPackage_FileFeatureOverrides(t *testing.T) {
+	t.Parallel()
+
+	// A file can explicitly override a feature's default for every element
+	// within it (e.g. "option features.default_symbol_visibility = ..."),
+	// which is exactly what makes otherwise-unmarked messages/enums in that
+	// file non-importable elsewhere. FeatureSet fields are sparse -- only
+	// populated when explicitly set at this exact scope -- so this should
+	// show only for a file that actually set it, not for every Editions file.
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:    new("feat.proto"),
+		Syntax:  new("editions"),
+		Edition: descriptorpb.Edition_EDITION_2024.Enum(),
+		Package: new("feat"),
+		Options: &descriptorpb.FileOptions{
+			Features: &descriptorpb.FeatureSet{
+				DefaultSymbolVisibility: descriptorpb.FeatureSet_VisibilityFeature_LOCAL_ALL.Enum(),
+			},
+		},
+	}
+
+	files := buildTestRegistry(t, fdp)
+	items := packagesFromDocs(files, map[string]bool{"feat.proto": true})
+	out := renderPackage(items[0].(*docsPackage), false)
+
+	attest.True(t, strings.Contains(out, "features.default_symbol_visibility = LOCAL_ALL"), attest.Sprintf("file-level feature override missing: %q", out))
+}
+
+func TestRenderPackage_NoFileFeatureOverrides(t *testing.T) {
+	t.Parallel()
+
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:    new("nofeat.proto"),
+		Syntax:  new("editions"),
+		Edition: descriptorpb.Edition_EDITION_2023.Enum(),
+		Package: new("nofeat"),
+	}
+
+	files := buildTestRegistry(t, fdp)
+	items := packagesFromDocs(files, map[string]bool{"nofeat.proto": true})
+	out := renderPackage(items[0].(*docsPackage), false)
+
+	attest.False(t, strings.Contains(out, "features."), attest.Sprintf("no feature overrides should be shown: %q", out))
+}
+
 func TestRenderPackage_RequiredField(t *testing.T) {
 	t.Parallel()
 
