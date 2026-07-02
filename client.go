@@ -393,6 +393,7 @@ func resolveRegistry(fdsBytes []byte) (*protoregistry.Files, error) {
 	if err := proto.Unmarshal(fdsBytes, &fds); err != nil {
 		return nil, fmt.Errorf("unmarshalling file descriptors: %w", err)
 	}
+	stripMessageSets(&fds)
 	// WKT deps are resolved from the global registry.
 	regFiles, err := protodesc.NewFiles(&fds)
 	if err != nil {
@@ -404,11 +405,77 @@ func resolveRegistry(fdsBytes []byte) (*protoregistry.Files, error) {
 	if err := unmarshalOpts.Unmarshal(fdsBytes, &resolvedFDS); err != nil {
 		return nil, fmt.Errorf("resolving custom options: %w", err)
 	}
+	stripMessageSets(&resolvedFDS)
 	resolvedFiles, err := protodesc.NewFiles(&resolvedFDS)
 	if err != nil {
 		return nil, fmt.Errorf("building file registry with resolved options: %w", err)
 	}
 	return resolvedFiles, nil
+}
+
+// stripMessageSets removes, in place, any message using the legacy proto1
+// MessageSet wire format ("option message_set_wire_format = true;") along
+// with any now-dangling "extend" declarations against it. protodesc.NewFiles
+// refuses to build a registry containing one at all -- MessageSet support
+// was dropped from protobuf-go's default build, gated behind an unstable,
+// explicitly not-compatibility-covered build tag -- so without this, one
+// such message anywhere in a module (e.g. a legacy conformance-test fixture)
+// would fail the whole registry and leave every other type undocumented.
+func stripMessageSets(fds *descriptorpb.FileDescriptorSet) {
+	removed := make(map[string]bool)
+
+	var collect func(prefix string, msgs []*descriptorpb.DescriptorProto)
+	collect = func(prefix string, msgs []*descriptorpb.DescriptorProto) {
+		for _, m := range msgs {
+			full := prefix + "." + m.GetName()
+			if m.GetOptions().GetMessageSetWireFormat() {
+				removed[full] = true
+			}
+			collect(full, m.GetNestedType())
+		}
+	}
+	for _, f := range fds.GetFile() {
+		prefix := ""
+		if pkg := f.GetPackage(); pkg != "" {
+			prefix = "." + pkg
+		}
+		collect(prefix, f.GetMessageType())
+	}
+	if len(removed) == 0 {
+		return
+	}
+
+	pruneExtensions := func(exts []*descriptorpb.FieldDescriptorProto) []*descriptorpb.FieldDescriptorProto {
+		kept := make([]*descriptorpb.FieldDescriptorProto, 0, len(exts))
+		for _, x := range exts {
+			if !removed[x.GetExtendee()] {
+				kept = append(kept, x)
+			}
+		}
+		return kept
+	}
+	var pruneMessages func(msgs []*descriptorpb.DescriptorProto, prefix string) []*descriptorpb.DescriptorProto
+	pruneMessages = func(msgs []*descriptorpb.DescriptorProto, prefix string) []*descriptorpb.DescriptorProto {
+		kept := make([]*descriptorpb.DescriptorProto, 0, len(msgs))
+		for _, m := range msgs {
+			full := prefix + "." + m.GetName()
+			if removed[full] {
+				continue
+			}
+			m.NestedType = pruneMessages(m.GetNestedType(), full)
+			m.Extension = pruneExtensions(m.GetExtension())
+			kept = append(kept, m)
+		}
+		return kept
+	}
+	for _, f := range fds.GetFile() {
+		prefix := ""
+		if pkg := f.GetPackage(); pkg != "" {
+			prefix = "." + pkg
+		}
+		f.MessageType = pruneMessages(f.GetMessageType(), prefix)
+		f.Extension = pruneExtensions(f.GetExtension())
+	}
 }
 
 // newAuthInterceptor creates a client-only interceptor for adding authentication to requests.

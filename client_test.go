@@ -113,6 +113,83 @@ func TestResolveRegistry_DecodesCustomOption(t *testing.T) {
 	attest.Equal(t, gotValue, "hello world")
 }
 
+func TestResolveRegistry_SkipsMessageSet(t *testing.T) {
+	t.Parallel()
+
+	// Mirrors the real-world shape this was found against
+	// (buf.build/svanburen/protobuf-conformance's
+	// TestAllTypesProto2.MessageSetCorrect): one message declares
+	// "option message_set_wire_format = true;" (the legacy proto1 MessageSet
+	// wire format, which protodesc.NewFiles refuses to build at all), a
+	// second message declares an "extend" block against it, and a third,
+	// unrelated message has nothing to do with either.
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:    new("mset.proto"),
+		Syntax:  new("proto2"),
+		Package: new("mset"),
+		MessageType: []*descriptorpb.DescriptorProto{
+			{
+				Name:    new("Legacy"),
+				Options: &descriptorpb.MessageOptions{MessageSetWireFormat: new(true)},
+				ExtensionRange: []*descriptorpb.DescriptorProto_ExtensionRange{
+					{Start: new(int32(4)), End: new(int32(536870912))},
+				},
+			},
+			{
+				Name: new("LegacyExtension"),
+				Extension: []*descriptorpb.FieldDescriptorProto{
+					{
+						Name:     new("legacy_extension"),
+						Number:   new(int32(1000)),
+						Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+						Type:     descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
+						TypeName: new(".mset.LegacyExtension"),
+						Extendee: new(".mset.Legacy"),
+					},
+				},
+				Field: []*descriptorpb.FieldDescriptorProto{
+					{Name: new("str"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+				},
+			},
+			{
+				Name: new("Fine"),
+				Field: []*descriptorpb.FieldDescriptorProto{
+					{Name: new("ok"), Number: new(int32(1)), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()},
+				},
+			},
+		},
+	}
+
+	fdsBytes, err := proto.Marshal(&descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{fdp}})
+	attest.Ok(t, err, attest.Fatal())
+
+	// Confirm the premise: a naive build fails outright on the MessageSet
+	// message, taking every other type in the file down with it.
+	var plainFDS descriptorpb.FileDescriptorSet
+	attest.Ok(t, proto.Unmarshal(fdsBytes, &plainFDS), attest.Fatal())
+	_, err = protodesc.NewFiles(&plainFDS)
+	attest.True(t, err != nil, attest.Sprintf("expected the naive build to fail on the MessageSet message"))
+
+	// resolveRegistry should skip just the MessageSet message and the
+	// now-dangling extension declaration against it, and still build
+	// everything else in the file -- including LegacyExtension itself,
+	// which is a perfectly ordinary message that merely also happened to
+	// declare that extend block.
+	regFiles, err := resolveRegistry(fdsBytes)
+	attest.Ok(t, err, attest.Fatal())
+
+	_, err = regFiles.FindDescriptorByName("mset.Legacy")
+	attest.True(t, err != nil, attest.Sprintf("the MessageSet message itself should have been skipped"))
+
+	legacyExt, err := regFiles.FindDescriptorByName("mset.LegacyExtension")
+	attest.Ok(t, err, attest.Fatal())
+	attest.Equal(t, string(legacyExt.(protoreflect.MessageDescriptor).Fields().Get(0).Name()), "str")
+
+	fine, err := regFiles.FindDescriptorByName("mset.Fine")
+	attest.Ok(t, err, attest.Fatal())
+	attest.Equal(t, string(fine.(protoreflect.MessageDescriptor).Fields().Get(0).Name()), "ok")
+}
+
 func TestResolveRegistry_NoCustomOptions(t *testing.T) {
 	t.Parallel()
 
