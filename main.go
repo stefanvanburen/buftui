@@ -702,7 +702,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = modelStateBrowsingCommitContents
 				return m, nil
 			case modelStateBrowsingCommitContents:
-				// TODO: Hook this up to caching.
 				if m.docsCancel != nil {
 					m.docsCancel()
 					m.docsCancel = nil
