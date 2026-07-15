@@ -14,6 +14,7 @@ require (
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/bufbuild/httplb v0.4.1
 	github.com/bufbuild/protocompile v0.14.2-0.20260429155904-12ef1ef2ce91
+	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/cli/browser v1.3.0
 	github.com/jdx/go-netrc v1.0.0
 	github.com/peterbourgon/ff/v4 v4.0.0-beta.1
@@ -32,7 +33,6 @@ require (
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260525132238-948f4557a654 // indirect
-	github.com/charmbracelet/x/ansi v0.11.7 // indirect
 	github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
