@@ -10,5 +10,5 @@ and using [bubbletea](https://github.com/charmbracelet/bubbletea) for rendering 
 ## Usage
 
 ```shell
-go run github.com/stefanvanburen/buftui@latest
+go run go.vanburen.xyz/buftui@latest
 ```

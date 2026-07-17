@@ -1,4 +1,4 @@
-module github.com/stefanvanburen/buftui
+module go.vanburen.xyz/buftui
 
 go 1.26.0
 
