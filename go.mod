@@ -3,8 +3,8 @@ module go.vanburen.xyz/buftui
 go 1.26.0
 
 require (
-	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.20.0-20260629211719-be09125d9193.1
-	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.11-20260629211719-be09125d9193.1
+	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.20.0-20260713175918-10d915f5b43b.1
+	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.11-20260713175918-10d915f5b43b.1
 	buf.build/go/protovalidate v1.2.0
 	charm.land/bubbles/v2 v2.1.0
 	charm.land/bubbletea/v2 v2.0.7
