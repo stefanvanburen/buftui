@@ -135,6 +135,7 @@ func (m model) ShortHelp() []key.Binding {
 			if len(m.currentLabels) > 0 {
 				shortHelp = append(shortHelp, keys.Right)
 			}
+			// commitTabDeps needs nothing beyond the tab-scoped default set above.
 		}
 	case modelStateBrowsingCommitFileContents:
 		if m.activeCommitTab == commitTabDocs {

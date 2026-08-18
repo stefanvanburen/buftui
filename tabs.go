@@ -13,6 +13,7 @@ const (
 	commitTabDocs commitTab = iota
 	commitTabFiles
 	commitTabLabels
+	commitTabDeps
 	commitTabCount // sentinel for wrapping
 )
 
@@ -24,6 +25,8 @@ func (t commitTab) String() string {
 		return "Files"
 	case commitTabLabels:
 		return "Labels"
+	case commitTabDeps:
+		return "Deps"
 	default:
 		return ""
 	}
@@ -33,6 +36,7 @@ var allCommitTabs = []commitTab{
 	commitTabDocs,
 	commitTabFiles,
 	commitTabLabels,
+	commitTabDeps,
 }
 
 // renderTabBar renders a horizontal tab bar with the active tab highlighted.

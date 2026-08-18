@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/module/v1/modulev1connect"
+	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/owner/v1/ownerv1connect"
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
 	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
 	tea "charm.land/bubbletea/v2"
@@ -59,6 +60,7 @@ type client struct {
 	resourceServiceClient modulev1connect.ResourceServiceClient
 	labelServiceClient    modulev1connect.LabelServiceClient
 	graphServiceClient    modulev1connect.GraphServiceClient
+	ownerServiceClient    ownerv1connect.OwnerServiceClient
 
 	// docsCache holds compiled docs keyed by commit ID. Commits are
 	// immutable on the BSR, so a cached entry never needs invalidating --
@@ -82,6 +84,7 @@ func newClient(httpClient connect.HTTPClient, remote, token string) *client {
 		resourceServiceClient: modulev1connect.NewResourceServiceClient(httpClient, address, options),
 		labelServiceClient:    modulev1connect.NewLabelServiceClient(httpClient, address, options),
 		graphServiceClient:    modulev1connect.NewGraphServiceClient(httpClient, address, options),
+		ownerServiceClient:    ownerv1connect.NewOwnerServiceClient(httpClient, address, options),
 	}
 }
 

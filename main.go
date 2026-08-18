@@ -123,6 +123,9 @@ func run(_ context.Context, args []string) error {
 	docsViewport := viewport.New()
 	docsViewport.SoftWrap = true
 
+	depsViewport := viewport.New()
+	depsViewport.SoftWrap = true
+
 	model := model{
 		state:            initialState,
 		spinner:          spinner.New(spinner.WithSpinner(spinner.Dot)),
@@ -142,6 +145,7 @@ func run(_ context.Context, args []string) error {
 		labelsList:      labelsList,
 		docsList:        docsList,
 		docsViewport:    docsViewport,
+		depsViewport:    depsViewport,
 	}
 
 	if _, err := tea.NewProgram(model).Run(); err != nil {
@@ -222,6 +226,14 @@ type model struct {
 	docsMatches  [][]int
 	docsMatchIdx int
 
+	// currentDeps holds the rendered dependency tree for the current commit
+	// (see deps.go), fetched lazily on first entering the Deps tab rather
+	// than eagerly alongside docs -- it costs 3 RPCs (graph + batched
+	// module/owner name resolution) that most commit views never look at.
+	currentDeps string
+	loadingDeps bool
+	depsErr     error
+
 	// Tab state
 	activeCommitTab commitTab
 
@@ -232,6 +244,7 @@ type model struct {
 	labelsList      list.Model
 	docsList        list.Model
 	docsViewport    viewport.Model
+	depsViewport    viewport.Model
 	fileViewport    viewport.Model
 	navigateInput   textinput.Model
 	help            help.Model
@@ -316,6 +329,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.docsList.SetWidth(msg.Width / 3)
 		m.docsViewport.SetHeight(msg.Height - 7)
 		m.docsViewport.SetWidth(msg.Width * 2 / 3)
+		m.depsViewport.SetHeight(msg.Height - 7)
+		m.depsViewport.SetWidth(msg.Width)
 		m.navigateInput.SetWidth(min(msg.Width, 50))
 
 	case resourceMsg:
@@ -437,6 +452,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loadingDocs = true
 		m.docsErr = nil
 		m.docsList.SetItems(nil)
+		// Reset deps state too -- it's specific to the commit just left.
+		m.currentDeps = ""
+		m.loadingDeps = false
+		m.depsErr = nil
+		m.depsViewport.SetContent("")
 		commitFiles := make([]list.Item, len(m.currentCommitFiles))
 		for i, currentCommitFile := range m.currentCommitFiles {
 			commitFiles[i] = &commitFile{underlying: currentCommitFile, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule, commitID: m.currentCommitID}
@@ -489,6 +509,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			note := fmt.Sprintf("Skipped %d legacy MessageSet %s (unsupported): %s", len(msg.skipped), noun, strings.Join(msg.skipped, ", "))
 			return m, m.docsList.NewStatusMessage(note)
 		}
+		return m, nil
+
+	case depsMsg:
+		m.loadingDeps = false
+		m.depsErr = nil
+		m.currentDeps = msg.rendered
+		m.depsViewport.SetContent(m.currentDeps)
+		return m, nil
+
+	case depsErrMsg:
+		m.loadingDeps = false
+		m.depsErr = msg.err
 		return m, nil
 
 	case docsErrMsg:
@@ -922,6 +954,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.fileViewport.GotoTop()
 		case commitTabLabels:
 			m.labelsList, cmd = m.labelsList.Update(msg)
+		case commitTabDeps:
+			m.depsViewport, cmd = m.depsViewport.Update(msg)
 		case commitTabDocs:
 			prevIdx := m.docsList.Index()
 			m.docsList, cmd = m.docsList.Update(msg)
@@ -1018,6 +1052,14 @@ func (m model) View() tea.View {
 				contentView = "No labels found for module"
 			} else {
 				contentView = m.labelsList.View()
+			}
+		case commitTabDeps:
+			if m.loadingDeps {
+				contentView = m.spinner.View() + " Loading dependency graph"
+			} else if m.depsErr != nil {
+				contentView = lipgloss.NewStyle().Foreground(colorError).Render("Error loading dependencies: " + m.depsErr.Error())
+			} else {
+				contentView = m.depsViewport.View()
 			}
 		case commitTabDocs:
 			if m.loadingDocs {
@@ -1309,6 +1351,10 @@ func (m *model) loadTabIfNeeded() tea.Cmd {
 	if m.activeCommitTab == commitTabLabels && len(m.currentLabels) == 0 && !m.loadingLabels {
 		m.loadingLabels = true
 		return m.client.listLabels(m.currentOwner, m.currentModule)
+	}
+	if m.activeCommitTab == commitTabDeps && m.currentDeps == "" && !m.loadingDeps && m.depsErr == nil {
+		m.loadingDeps = true
+		return m.client.getDeps(m.currentCommitID, m.remote)
 	}
 	return nil
 }
