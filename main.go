@@ -872,6 +872,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, list.NewStatusMessage("opened " + lipgloss.NewStyle().Hyperlink(url).Render(url))
 			}
+
+		case key.Matches(msg, m.keys.BrowseSCM):
+			if m.state == modelStateBrowsingCommits {
+				commit, ok := m.commitList.SelectedItem().(*commit)
+				if !ok {
+					m.err = fmt.Errorf("invalid list item type: expected commit")
+					return m, tea.Quit
+				}
+				if url := commit.underlying.SourceControlUrl; url != "" {
+					if err := browser.OpenURL(url); err != nil {
+						errStr := lipgloss.NewStyle().Foreground(colorError).Render(fmt.Sprintf("opening URL %q: %s", url, err))
+						return m, m.commitList.NewStatusMessage(errStr)
+					}
+					return m, m.commitList.NewStatusMessage("opened " + lipgloss.NewStyle().Hyperlink(url).Render(url))
+				}
+			}
 		}
 
 	case spinner.TickMsg:

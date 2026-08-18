@@ -23,6 +23,7 @@ type keyMap struct {
 	Quit       key.Binding
 	Browse     key.Binding
 	Yank       key.Binding
+	BrowseSCM  key.Binding
 	TabLeft    key.Binding
 	TabRight   key.Binding
 	Search     key.Binding
@@ -77,6 +78,10 @@ var keys = keyMap{
 		key.WithKeys("y"),
 		key.WithHelp("y", "copy URL"),
 	),
+	BrowseSCM: key.NewBinding(
+		key.WithKeys("O"),
+		key.WithHelp("O", "open source commit"),
+	),
 	TabLeft: key.NewBinding(
 		key.WithKeys("["),
 		key.WithHelp("[", "prev tab"),
@@ -111,6 +116,9 @@ func (m model) ShortHelp() []key.Binding {
 		}
 	case modelStateBrowsingCommits:
 		shortHelp = []key.Binding{keys.Up, keys.Down, keys.Back, keys.Yank}
+		if commit, ok := m.commitList.SelectedItem().(*commit); ok && commit.underlying.SourceControlUrl != "" {
+			shortHelp = append(shortHelp, keys.BrowseSCM)
+		}
 		if len(m.currentCommits) != 0 {
 			shortHelp = append(shortHelp, keys.Right)
 		}

@@ -78,8 +78,9 @@ func (f *fakeCommitServiceHandler) ListCommits(
 ) (*connect.Response[modulev1.ListCommitsResponse], error) {
 	commits := []*modulev1.Commit{
 		{
-			Id:         "abc123def456",
-			CreateTime: timestamppb.New(time.Now().Add(-1 * time.Hour)),
+			Id:               "abc123def456",
+			CreateTime:       timestamppb.New(time.Now().Add(-1 * time.Hour)),
+			SourceControlUrl: "https://github.com/bufbuild/registry/commit/abc123def4567890",
 		},
 		{
 			Id:         "def456ghi789",

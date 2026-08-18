@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
@@ -75,7 +77,47 @@ func (m *commit) Title() string {
 // Description implements list.DefaultItem.
 func (m *commit) Description() string {
 	t := m.underlying.CreateTime.AsTime()
-	return fmt.Sprintf("%s (%s)", t.Format(time.Stamp), relativeTime(t))
+	desc := fmt.Sprintf("%s (%s)", t.Format(time.Stamp), relativeTime(t))
+	if scURL := m.underlying.SourceControlUrl; scURL != "" {
+		desc += " · " + shortenSourceControlURL(scURL)
+	}
+	return desc
+}
+
+// shortenSourceControlURL returns a compact label for a source control
+// commit URL, e.g. "github.com/owner/repo@abc1234def5" for GitHub/GitLab/
+// Bitbucket-shaped URLs. Unknown shapes fall back to the bare host, since
+// the full URL is generally too long to sit comfortably in a list row.
+func shortenSourceControlURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" {
+		return rawURL
+	}
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	for i, segment := range segments {
+		if segment != "commit" && segment != "commits" {
+			continue
+		}
+		if i == 0 || i+1 >= len(segments) {
+			break
+		}
+		ref := segments[i+1]
+		if len(ref) > 12 && isHexString(ref) {
+			ref = ref[:12]
+		}
+		repoPath := strings.Join(segments[:i], "/")
+		return fmt.Sprintf("%s/%s@%s", parsed.Host, repoPath, ref)
+	}
+	return parsed.Host
+}
+
+func isHexString(s string) bool {
+	for _, r := range s {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", r) {
+			return false
+		}
+	}
+	return true
 }
 
 type commitFile struct {
