@@ -1,6 +1,6 @@
 module go.vanburen.xyz/buftui
 
-go 1.26.0
+go 1.27.0
 
 require (
 	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.20.0-20260713175918-10d915f5b43b.1
