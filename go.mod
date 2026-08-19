@@ -62,10 +62,10 @@ require (
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
-	golang.org/x/tools v0.44.0 // indirect
+	golang.org/x/tools v0.44.1-0.20260420230617-19499e7caabc // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260223185530-2f722ef697dc // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260223185530-2f722ef697dc // indirect
-	honnef.co/go/tools v0.6.1 // indirect
+	honnef.co/go/tools v0.8.0-rc.1 // indirect
 )
 
 tool honnef.co/go/tools/cmd/staticcheck
