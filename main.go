@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/user"
@@ -29,8 +30,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/cli/browser"
 	"github.com/jdx/go-netrc"
-	"github.com/peterbourgon/ff/v4"
-	"github.com/peterbourgon/ff/v4/ffhelp"
 	"google.golang.org/protobuf/reflect/protoregistry"
 )
 
@@ -49,34 +48,59 @@ func main() {
 	}
 }
 
+type runFlags struct {
+	remote    string
+	token     string
+	reference string
+}
+
+func parseRunFlags(args []string) (runFlags, error) {
+	var flags runFlags
+	fs := flag.NewFlagSet("buftui", flag.ContinueOnError)
+	fs.SetOutput(os.Stdout)
+	fs.Usage = func() {
+		fmt.Fprintf(fs.Output(), "Usage: %s [flags]\n", fs.Name())
+		fs.PrintDefaults()
+	}
+
+	fs.StringVar(&flags.remote, "remote", "", "BSR remote")
+	fs.StringVar(&flags.token, "token", "", "Set token for authentication (default: password for remote in ~/.netrc)")
+	fs.StringVar(&flags.token, "t", "", "Set token for authentication (default: password for remote in ~/.netrc)")
+	// `-r` is for reference, which should generally be preferred.
+	fs.StringVar(&flags.reference, "reference", "", "Set BSR reference to open")
+	fs.StringVar(&flags.reference, "r", "", "Set BSR reference to open")
+
+	if err := fs.Parse(args); err != nil {
+		// flag.Parse already invokes Usage for its built-in -h/--help handling.
+		if err != flag.ErrHelp {
+			fs.Usage()
+		}
+		return runFlags{}, err
+	}
+	return flags, nil
+}
+
 func run(_ context.Context, args []string) error {
-	fs := ff.NewFlagSet("buftui")
-	var (
-		// `-r` is for reference, which should generally be preferred.
-		remoteFlag    = fs.StringLong("remote", "", "BSR remote")
-		tokenFlag     = fs.String('t', "token", "", "Set token for authentication (default: password for remote in ~/.netrc)")
-		referenceFlag = fs.String('r', "reference", "", "Set BSR reference to open")
-	)
-	if err := ff.Parse(fs, args); err != nil {
-		fmt.Printf("%s\n", ffhelp.Flags(fs))
+	flags, err := parseRunFlags(args)
+	if err != nil {
 		return err
 	}
 
-	parsedRemote, parsedReference, err := parseReference(*referenceFlag)
+	parsedRemote, parsedReference, err := parseReference(flags.reference)
 	if err != nil {
 		return fmt.Errorf("parsing reference flag: %w", err)
 	}
-	if parsedRemote != "" && *remoteFlag != "" && *remoteFlag != parsedRemote {
-		return fmt.Errorf("cannot provide conflicting `--remote` flag (%s) and reference remote (%s)", *remoteFlag, parsedRemote)
+	if parsedRemote != "" && flags.remote != "" && flags.remote != parsedRemote {
+		return fmt.Errorf("cannot provide conflicting `--remote` flag (%s) and reference remote (%s)", flags.remote, parsedRemote)
 	}
 	// We know the remotes at least aren't conflicting, so take whichever is non-empty.
-	remote := cmp.Or(parsedRemote, *remoteFlag, defaultRemote)
+	remote := cmp.Or(parsedRemote, flags.remote, defaultRemote)
 	// Sanity check for `--remote ""`, or an invalid parsed reference.
 	if remote == "" {
 		return fmt.Errorf("remote cannot be empty")
 	}
 
-	token := *tokenFlag
+	token := flags.token
 	if token == "" {
 		var err error
 		token, err = getTokenFromNetrc(remote)

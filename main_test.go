@@ -12,6 +12,35 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
+func TestParseRunFlags(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		args []string
+		want runFlags
+	}{
+		{
+			name: "long flags",
+			args: []string{"--remote", "example.com", "--token", "token", "--reference", "owner/module"},
+			want: runFlags{remote: "example.com", token: "token", reference: "owner/module"},
+		},
+		{
+			name: "short flags",
+			args: []string{"-t=token", "-r", "owner/module:main"},
+			want: runFlags{token: "token", reference: "owner/module:main"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := parseRunFlags(tc.args)
+			attest.Equal(t, err, nil)
+			attest.Equal(t, got.remote, tc.want.remote)
+			attest.Equal(t, got.token, tc.want.token)
+			attest.Equal(t, got.reference, tc.want.reference)
+		})
+	}
+}
+
 func Test_parseReference(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
