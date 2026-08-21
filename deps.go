@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"time"
 
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
 	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
@@ -13,12 +14,22 @@ import (
 	"connectrpc.com/connect"
 )
 
-// depsMsg carries the dependency tree for a commit.
+// depsMsg carries the dependency tree for a commit, and the number of
+// distinct commits it depends on.
 type depsMsg struct {
-	root *tree.Node
+	root  *tree.Node
+	count int
 }
 
 type depsErrMsg struct{ err error }
+
+// depsStatusExpiredMsg retires the deps tab's status message. seq identifies
+// which message it belongs to, so a stale expiry can't clear a newer one.
+type depsStatusExpiredMsg struct{ seq int }
+
+// depsStatusLifetime matches list.Model's default StatusMessageLifetime, so a
+// message in the deps tab lives exactly as long as one in any list.
+const depsStatusLifetime = time.Second
 
 // getDeps fetches the full transitive dependency graph for commitID, resolves
 // every node's owner/module name, and builds a navigable tree rooted at
@@ -70,7 +81,10 @@ func (c *client) getDeps(commitID, remote string) tea.Cmd {
 		}
 
 		nodes := commitDepNodes(remote, graph.Commits, modulesResp.Msg.Modules, ownersResp.Msg.Owners)
-		return depsMsg{root: depsTree(commitID, graph.Edges, nodes)}
+		return depsMsg{
+			root:  depsTree(commitID, graph.Edges, nodes),
+			count: reachableDepCount(commitID, graph.Edges),
+		}
 	}
 }
 
@@ -226,6 +240,31 @@ func depNodeOf(commitID string, nodes map[string]depNode) depNode {
 		return depNode{label: commitID}
 	}
 	return node
+}
+
+// reachableDepCount returns the number of distinct commits the root depends
+// on, directly or transitively, excluding the root itself. The tree repeats a
+// shared dep under every parent that requires it, so counting rendered rows
+// would overcount; the seen set also makes this safe on a cyclic graph.
+func reachableDepCount(rootCommitID string, edges []*modulev1.Graph_Edge) int {
+	children := make(map[string][]string)
+	for _, e := range edges {
+		children[e.FromNode.CommitId] = append(children[e.FromNode.CommitId], e.ToNode.CommitId)
+	}
+	seen := make(map[string]bool)
+	queue := []string{rootCommitID}
+	for len(queue) > 0 {
+		commitID := queue[0]
+		queue = queue[1:]
+		for _, dep := range children[commitID] {
+			if seen[dep] || dep == rootCommitID {
+				continue
+			}
+			seen[dep] = true
+			queue = append(queue, dep)
+		}
+	}
+	return len(seen)
 }
 
 // selectedDepTreeNode returns the tree node under the cursor, or nil if the

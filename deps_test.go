@@ -148,3 +148,37 @@ func TestDepsTreeModel_NavigationCollapseAndHyperlinks(t *testing.T) {
 	ok.True(t, strings.Contains(model.View(), "bufbuild/protovalidate@ghi789"),
 		ok.Sprintf("reopening bufplugin should show protovalidate again:\n%s", model.View()))
 }
+
+func TestReachableDepCount(t *testing.T) {
+	t.Parallel()
+
+	edge := func(from, to string) *modulev1.Graph_Edge {
+		return &modulev1.Graph_Edge{
+			FromNode: &modulev1.Graph_Node{CommitId: from},
+			ToNode:   &modulev1.Graph_Node{CommitId: to},
+		}
+	}
+
+	// A shared dep is rendered under each of its parents, but counts once.
+	diamond := []*modulev1.Graph_Edge{
+		edge("registry", "bufplugin"),
+		edge("registry", "protovalidate"),
+		edge("bufplugin", "protovalidate"),
+	}
+	ok.Equal(t, reachableDepCount("registry", diamond), 2,
+		ok.Sprintf("protovalidate is reachable twice but is one dependency"))
+
+	ok.Equal(t, reachableDepCount("registry", nil), 0,
+		ok.Sprintf("a commit with no edges has no dependencies"))
+
+	// A cycle must terminate, and must not count the root as its own dep.
+	cycle := []*modulev1.Graph_Edge{edge("a", "b"), edge("b", "a")}
+	done := make(chan int, 1)
+	go func() { done <- reachableDepCount("a", cycle) }()
+	select {
+	case count := <-done:
+		ok.Equal(t, count, 1, ok.Sprintf("only b is a dependency of a"))
+	case <-time.After(2 * time.Second):
+		ok.True(t, false, ok.Sprintf("reachableDepCount did not return -- likely looping on a cycle"))
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
 	"buf.build/go/protovalidate"
@@ -260,9 +261,14 @@ type model struct {
 	depsLoaded  bool
 	loadingDeps bool
 	depsErr     error
-	// depsStatus is the result of the last yank/browse in the deps tab,
-	// shown beneath the tree until the next keypress there.
-	depsStatus string
+	// depsCount is how many distinct commits the current one depends on,
+	// shown in the deps tab's status bar the way each list shows its item
+	// count. depsStatus temporarily replaces it with the result of the last
+	// yank/browse there; depsStatusSeq discards the expiry of a message that
+	// a newer one has already replaced.
+	depsCount     int
+	depsStatus    string
+	depsStatusSeq int
 
 	// Tab state
 	activeCommitTab commitTab
@@ -361,9 +367,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.docsList.SetWidth(msg.Width / 3)
 		m.docsViewport.SetHeight(msg.Height - 7)
 		m.docsViewport.SetWidth(msg.Width * 2 / 3)
-		// One line shorter than the other tabs: the deps status line below
-		// the tree is always reserved, so the tree never overflows.
-		m.depsTree.SetSize(msg.Width, msg.Height-8)
+		// The deps tab gets the same total height as the other tabs; the
+		// status bar above the tree takes two lines of it (one of them the
+		// list style's bottom padding).
+		m.depsTree.SetSize(msg.Width, msg.Height-9)
 		m.navigateInput.SetWidth(min(msg.Width, 50))
 
 	case resourceMsg:
@@ -489,6 +496,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.depsLoaded = false
 		m.loadingDeps = false
 		m.depsErr = nil
+		m.depsCount = 0
 		m.depsStatus = ""
 		m.depsTree.SetNodes(tree.NewNode())
 		commitFiles := make([]list.Item, len(m.currentCommitFiles))
@@ -549,12 +557,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loadingDeps = false
 		m.depsErr = nil
 		m.depsLoaded = true
+		m.depsCount = msg.count
 		m.depsTree.SetNodes(msg.root)
 		return m, nil
 
 	case depsErrMsg:
 		m.loadingDeps = false
 		m.depsErr = msg.err
+		return m, nil
+
+	case depsStatusExpiredMsg:
+		if msg.seq == m.depsStatusSeq {
+			m.depsStatus = ""
+		}
 		return m, nil
 
 	case docsErrMsg:
@@ -843,7 +858,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// cursor; only once it's collapsed does it go back out
 					// to the commit list.
 					if node := selectedDepTreeNode(m.depsTree); node != nil && node.IsOpen() {
-						m.depsStatus = ""
 						m.depsTree.CloseCurrentNode()
 						return m, nil
 					}
@@ -889,8 +903,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, nil
 					}
 					url := strings.TrimPrefix(dep.href, "https://")
-					m.depsStatus = "copied " + url
-					return m, tea.SetClipboard(url)
+					return m, tea.Batch(tea.SetClipboard(url), m.setDepsStatus("copied "+url))
 				}
 				commitFile, ok := m.commitFilesList.SelectedItem().(*commitFile)
 				if !ok {
@@ -932,11 +945,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, nil
 					}
 					if err := browser.OpenURL(dep.href); err != nil {
-						m.depsStatus = lipgloss.NewStyle().Foreground(colorError).Render(fmt.Sprintf("opening URL %q: %s", dep.href, err))
-						return m, nil
+						errStr := lipgloss.NewStyle().Foreground(colorError).Render(fmt.Sprintf("opening URL %q: %s", dep.href, err))
+						return m, m.setDepsStatus(errStr)
 					}
-					m.depsStatus = "opened " + renderHyperlink(dep.href, dep.href)
-					return m, nil
+					return m, m.setDepsStatus("opened " + renderHyperlink(dep.href, dep.href))
 				}
 				list = m.commitFilesList
 				commitFile, ok := m.commitFilesList.SelectedItem().(*commitFile)
@@ -1020,11 +1032,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case commitTabLabels:
 			m.labelsList, cmd = m.labelsList.Update(msg)
 		case commitTabDeps:
-			if _, ok := msg.(tea.KeyPressMsg); ok {
-				// Any key that isn't yank/browse (those return above)
-				// clears the last status message.
-				m.depsStatus = ""
-			}
 			m.depsTree, cmd = m.depsTree.Update(msg)
 		case commitTabDocs:
 			prevIdx := m.docsList.Index()
@@ -1129,7 +1136,7 @@ func (m model) View() tea.View {
 			} else if m.depsErr != nil {
 				contentView = lipgloss.NewStyle().Foreground(colorError).Render("Error loading dependencies: " + m.depsErr.Error())
 			} else {
-				contentView = m.depsTree.View() + "\n" + m.depsStatus
+				contentView = m.depsStatusView() + "\n" + m.depsTree.View()
 			}
 		case commitTabDocs:
 			if m.loadingDocs {
@@ -1417,6 +1424,41 @@ func (m model) activeListIsFiltering() bool {
 }
 
 // loadTabIfNeeded fires any data-fetching command required by the newly active tab.
+// setDepsStatus shows text in the deps tab's status bar and returns the cmd
+// that clears it once it has had its lifetime, mirroring how a list retires
+// the messages from list.Model.NewStatusMessage.
+func (m *model) setDepsStatus(text string) tea.Cmd {
+	m.depsStatus = text
+	m.depsStatusSeq++
+	seq := m.depsStatusSeq
+	return tea.Tick(depsStatusLifetime, func(time.Time) tea.Msg {
+		return depsStatusExpiredMsg{seq: seq}
+	})
+}
+
+// depsStatusView renders the deps tab's status bar: the dependency count,
+// temporarily replaced by the result of the last yank/browse. It reuses the
+// list styles so it reads identically to the "N commits" bar the other tabs
+// draw above their content.
+func (m model) depsStatusView() string {
+	// Take the list status bar's color, but pin its geometry rather than
+	// inheriting it: the tree's height budget assumes this is exactly two
+	// lines, and m.listStyles is only populated once the terminal answers
+	// the background-color query -- which some (tmux) never do, leaving the
+	// zero style and a one-line bar.
+	style := m.listStyles.StatusBar.Padding(0, 0, 1, 2).MaxWidth(m.depsTree.Width())
+	switch {
+	case m.depsStatus != "":
+		return style.Render(m.depsStatus)
+	case m.depsCount == 0:
+		return style.Render(m.listStyles.StatusEmpty.Render("No dependencies"))
+	case m.depsCount == 1:
+		return style.Render("1 dependency")
+	default:
+		return style.Render(fmt.Sprintf("%d dependencies", m.depsCount))
+	}
+}
+
 func (m *model) loadTabIfNeeded() tea.Cmd {
 	if m.activeCommitTab == commitTabLabels && len(m.currentLabels) == 0 && !m.loadingLabels {
 		m.loadingLabels = true
