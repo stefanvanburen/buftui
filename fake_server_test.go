@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/module/v1/modulev1connect"
@@ -24,7 +25,7 @@ import (
 )
 
 // fakeModuleServiceHandler implements the ModuleService for testing. delay,
-// if set, is slept before responding -- used to simulate a slow/hanging
+// if set, is waited out before responding -- used to simulate a slow/hanging
 // server for RPC timeout tests.
 type fakeModuleServiceHandler struct {
 	modulev1connect.UnimplementedModuleServiceHandler
@@ -35,9 +36,7 @@ func (f *fakeModuleServiceHandler) ListModules(
 	ctx context.Context,
 	req *connect.Request[modulev1.ListModulesRequest],
 ) (*connect.Response[modulev1.ListModulesResponse], error) {
-	if f.delay > 0 {
-		time.Sleep(f.delay)
-	}
+	sleepOrDone(ctx, f.delay)
 	modules := []*modulev1.Module{
 		{
 			Id:          "mod1",
@@ -190,9 +189,7 @@ func (f *fakeGraphServiceHandler) GetGraph(
 	req *connect.Request[modulev1.GetGraphRequest],
 ) (*connect.Response[modulev1.GetGraphResponse], error) {
 	f.calls.Add(1)
-	if f.delay > 0 {
-		time.Sleep(f.delay)
-	}
+	sleepOrDone(ctx, f.delay)
 	return connect.NewResponse(&modulev1.GetGraphResponse{
 		Graph: &modulev1.Graph{},
 	}), nil
@@ -595,19 +592,23 @@ func TestDocsErrMsg(t *testing.T) {
 // buf.build/svanburen/protobuf-conformance, though that specific case turned
 // out to be a fast error rather than a true hang).
 func TestListModules_TimesOut(t *testing.T) {
-	orig := rpcTimeout
-	rpcTimeout = 50 * time.Millisecond
-	t.Cleanup(func() { rpcTimeout = orig })
+	t.Parallel()
 
-	c := startFakeServerWithSlowModuleList(t, 2*time.Second)
+	synctest.Test(t, func(t *testing.T) {
+		// A handler that never answers, tested against the real rpcTimeout.
+		// Both are free inside a bubble: its clock only advances once every
+		// goroutine in the bubble is durably blocked, so the hour the handler
+		// sleeps and the 30s the client waits both pass instantly.
+		c := startFakeServerWithSlowModuleList(t, time.Hour)
 
-	start := time.Now()
-	msg := c.listModules("someowner")()
-	elapsed := time.Since(start)
+		start := time.Now()
+		msg := c.listModules("someowner")()
+		elapsed := time.Since(start)
 
-	_, isErr := msg.(errMsg)
-	ok.True(t, isErr, ok.Sprintf("expected a timeout to surface as errMsg, got %T: %v", msg, msg))
-	ok.True(t, elapsed < time.Second, ok.Sprintf("expected the call to time out around rpcTimeout (50ms), took %v", elapsed))
+		_, isErr := msg.(errMsg)
+		ok.True(t, isErr, ok.Sprintf("expected a timeout to surface as errMsg, got %T: %v", msg, msg))
+		ok.Equal(t, elapsed, rpcTimeout, ok.Sprintf("expected the call to give up exactly at rpcTimeout"))
+	})
 }
 
 // TestDocsErr_ClearedOnSuccess verifies a stale docsErr from a previous
@@ -764,6 +765,24 @@ func TestDocsSearch_ActivateAndSubmit(t *testing.T) {
 	m2, _ = m.Update(tea.KeyPressMsg{Code: 'N', Text: "N"})
 	m = m2.(model)
 	ok.Equal(t, m.docsMatchIdx, 0, ok.Sprintf("N should wrap back to the first match"))
+}
+
+// sleepOrDone waits out d, or returns early if the request context is
+// cancelled -- which connect does when the client gives up on the call.
+//
+// A plain time.Sleep would leave the handler goroutine running past the point
+// the test cares about. Outside a bubble that is merely untidy; inside one it
+// is fatal, because a bubble's clock stops advancing the moment its root
+// goroutine exits, so a handler still parked in Sleep can never wake and
+// synctest reports the bubble as deadlocked.
+func sleepOrDone(ctx context.Context, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	select {
+	case <-time.After(d):
+	case <-ctx.Done():
+	}
 }
 
 // inMemoryClient serves mux on httptest's in-memory network -- no TCP, no

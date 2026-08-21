@@ -32,15 +32,19 @@ const pageSize = 250
 // fetching a resource or commit content). Every BSR RPC call used to run
 // under context.Background() with no deadline at all, so a slow or hanging
 // backend response could block the whole app forever with no way to
-// recover. Var, not const, so tests can shrink it to exercise the timeout
-// path without waiting tens of seconds.
-var rpcTimeout = 30 * time.Second
+// recover.
+//
+// This was a var so TestListModules_TimesOut could shrink it rather than
+// spend 30 real seconds. That test now runs inside a testing/synctest
+// bubble, where 30 seconds of fake time costs nothing, so it exercises this
+// exact value and the knob is gone.
+const rpcTimeout = 30 * time.Second
 
 // compileDocsTimeout bounds the whole compileDocs pipeline (dependency graph
 // fetch, dependency download, and local compilation combined), which does
 // more work than a single simple RPC call and so gets a longer budget of
 // its own rather than reusing rpcTimeout per step.
-var compileDocsTimeout = 2 * time.Minute
+const compileDocsTimeout = 2 * time.Minute
 
 // docsCacheMaxEntries bounds how many compiled commits are kept in memory at
 // once, evicting the oldest when exceeded, so a long session browsing many
