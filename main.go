@@ -175,6 +175,11 @@ func run(_ context.Context, args []string) error {
 		depsTree:        depsTree,
 	}
 
+	// Style for a dark background up front -- the same assumption list.New
+	// makes -- so the app is styled before (or without) a background color
+	// response.
+	model.applyStyles(defaultIsDark)
+
 	if _, err := tea.NewProgram(model).Run(); err != nil {
 		return err
 	}
@@ -305,49 +310,7 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.BackgroundColorMsg:
-		m.help.Styles = helpStyles(msg.IsDark())
-
-		listStyles := list.DefaultStyles(msg.IsDark())
-		listStyles.Title = listStyles.Title.Foreground(colorForeground).Background(colorBackground).Bold(true)
-		m.listStyles = listStyles
-
-		listItemStyles := list.NewDefaultItemStyles(msg.IsDark())
-		listItemStyles.SelectedTitle = listItemStyles.SelectedTitle.Foreground(colorForeground).BorderLeftForeground(colorForeground).Bold(true)
-		listItemStyles.SelectedDesc = listItemStyles.SelectedDesc.Foreground(colorForeground).BorderLeftForeground(colorForeground)
-		listItemStyles.NormalTitle = listItemStyles.NormalTitle.Foreground(colorForeground)
-		m.listItemStyles = listItemStyles
-
-		{
-			delegate := list.NewDefaultDelegate()
-			delegate.Styles = listItemStyles
-			delegate.ShowDescription = true
-			m.moduleList.SetDelegate(delegate)
-		}
-		{
-			delegate := list.NewDefaultDelegate()
-			delegate.Styles = listItemStyles
-			m.commitList.SetDelegate(delegate)
-		}
-		{
-			delegate := list.NewDefaultDelegate()
-			delegate.Styles = listItemStyles
-			delegate.ShowDescription = false
-			delegate.SetSpacing(0)
-			m.commitFilesList.SetDelegate(delegate)
-		}
-		{
-			delegate := list.NewDefaultDelegate()
-			delegate.Styles = listItemStyles
-			m.labelsList.SetDelegate(delegate)
-		}
-
-		{
-			delegate := list.NewDefaultDelegate()
-			delegate.Styles = listItemStyles
-			m.docsList.SetDelegate(delegate)
-		}
-
-		m.depsTree.SetStyles(depsTreeStyles(msg.IsDark()))
+		m.applyStyles(msg.IsDark())
 
 	case tea.WindowSizeMsg:
 		m.help.SetWidth(msg.Width)
@@ -414,7 +377,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.remote, "https://"+m.remote,
 			m.currentOwner, ownerURL,
 		)
-		m.moduleList.Styles = m.listStyles
 		m.moduleList.InfiniteScrolling = false
 		m.moduleList.AdditionalFullHelpKeys = func() []key.Binding {
 			return []key.Binding{keys.Right}
@@ -447,7 +409,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.currentOwner, "https://"+m.remote+"/"+m.currentOwner,
 			m.currentModule, moduleURL,
 		)
-		m.commitList.Styles = m.listStyles
 		m.commitList.InfiniteScrolling = false
 		m.commitList.AdditionalFullHelpKeys = func() []key.Binding {
 			return []key.Binding{keys.Left, keys.Right}
@@ -504,7 +465,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			commitFiles[i] = &commitFile{underlying: currentCommitFile, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule, commitID: m.currentCommitID}
 		}
 		m.commitFilesList.SetItems(commitFiles)
-		m.commitFilesList.Styles = m.listStyles
 		m.commitFilesList.InfiniteScrolling = false
 		m.commitFilesList.AdditionalFullHelpKeys = func() []key.Binding {
 			return []key.Binding{keys.Left, keys.Right}
@@ -613,7 +573,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			labels = append(labels, &labelItem{underlying: label, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule})
 		}
 		m.labelsList.SetItems(labels)
-		m.labelsList.Styles = m.listStyles
 		return m, nil
 
 	case navigateSuggestionsMsg:
@@ -1424,6 +1383,54 @@ func (m model) activeListIsFiltering() bool {
 }
 
 // loadTabIfNeeded fires any data-fetching command required by the newly active tab.
+// applyStyles restyles every component for a light or dark background. It
+// runs once at startup with defaultIsDark and again for real if the terminal
+// answers the background color query -- some (tmux) never do, and the app has
+// to look right there too.
+func (m *model) applyStyles(isDark bool) {
+	m.isDark = isDark
+	m.help.Styles = helpStyles(isDark)
+	m.listStyles = listStyles(isDark)
+	m.listItemStyles = listItemStyles(isDark)
+
+	m.moduleList.Styles = m.listStyles
+	m.commitList.Styles = m.listStyles
+	m.commitFilesList.Styles = m.listStyles
+	m.labelsList.Styles = m.listStyles
+	m.docsList.Styles = m.listStyles
+
+	{
+		delegate := list.NewDefaultDelegate()
+		delegate.Styles = m.listItemStyles
+		delegate.ShowDescription = true
+		m.moduleList.SetDelegate(delegate)
+	}
+	{
+		delegate := list.NewDefaultDelegate()
+		delegate.Styles = m.listItemStyles
+		m.commitList.SetDelegate(delegate)
+	}
+	{
+		delegate := list.NewDefaultDelegate()
+		delegate.Styles = m.listItemStyles
+		delegate.ShowDescription = false
+		delegate.SetSpacing(0)
+		m.commitFilesList.SetDelegate(delegate)
+	}
+	{
+		delegate := list.NewDefaultDelegate()
+		delegate.Styles = m.listItemStyles
+		m.labelsList.SetDelegate(delegate)
+	}
+	{
+		delegate := list.NewDefaultDelegate()
+		delegate.Styles = m.listItemStyles
+		m.docsList.SetDelegate(delegate)
+	}
+
+	m.depsTree.SetStyles(depsTreeStyles(isDark))
+}
+
 // setDepsStatus shows text in the deps tab's status bar and returns the cmd
 // that clears it once it has had its lifetime, mirroring how a list retires
 // the messages from list.Model.NewStatusMessage.

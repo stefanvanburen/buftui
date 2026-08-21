@@ -4,10 +4,15 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/list"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/compat"
 	chromastyles "github.com/alecthomas/chroma/v2/styles"
 )
+
+// defaultIsDark is the background assumed until the terminal says otherwise,
+// matching the assumption list.New makes internally.
+const defaultIsDark = true
 
 const (
 	bufBlue   = "#0e5df5"
@@ -49,6 +54,24 @@ func breadcrumb(pairs ...string) string {
 		parts[i] = renderHyperlink(pairs[i*2], pairs[i*2+1])
 	}
 	return strings.Join(parts, " › ")
+}
+
+// listStyles returns the list chrome styles: the bubbles defaults with the
+// title in the app's brand colors.
+func listStyles(isDark bool) list.Styles {
+	styles := list.DefaultStyles(isDark)
+	styles.Title = styles.Title.Foreground(colorForeground).Background(colorBackground).Bold(true)
+	return styles
+}
+
+// listItemStyles returns the list item styles: the bubbles defaults with the
+// selection and item titles in the app's brand colors.
+func listItemStyles(isDark bool) list.DefaultItemStyles {
+	styles := list.NewDefaultItemStyles(isDark)
+	styles.SelectedTitle = styles.SelectedTitle.Foreground(colorForeground).BorderLeftForeground(colorForeground).Bold(true)
+	styles.SelectedDesc = styles.SelectedDesc.Foreground(colorForeground).BorderLeftForeground(colorForeground)
+	styles.NormalTitle = styles.NormalTitle.Foreground(colorForeground)
+	return styles
 }
 
 // helpStyles returns well-contrasted help bar styles for the given background.
