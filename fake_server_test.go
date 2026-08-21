@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,8 +18,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
-	"go.akshayshah.org/attest"
-	"go.akshayshah.org/memhttp"
+	"go.vanburen.xyz/ok"
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -149,7 +149,7 @@ func (f *fakeResourceServiceHandler) GetResources(
 
 	// Check what type of resource was requested
 	for _, ref := range req.Msg.ResourceRefs {
-		if nameRef, ok := ref.Value.(*modulev1.ResourceRef_Name_); ok {
+		if nameRef, isName := ref.Value.(*modulev1.ResourceRef_Name_); isName {
 			name := nameRef.Name
 			// Return a module resource by default
 			resource := &modulev1.Resource{
@@ -210,22 +210,15 @@ func startFakeServer(t *testing.T) *client {
 	mux.Handle(modulev1connect.NewResourceServiceHandler(&fakeResourceServiceHandler{}))
 	mux.Handle(modulev1connect.NewGraphServiceHandler(&fakeGraphServiceHandler{}))
 
-	// Create in-memory HTTP server
-	server, err := memhttp.New(mux)
-	attest.Ok(t, err, attest.Fatal())
-
-	// Cleanup
-	t.Cleanup(func() {
-		attest.Ok(t, server.Close())
-	})
+	httpClient := inMemoryClient(t, mux)
 
 	// Return a client with all services
 	return &client{
-		moduleServiceClient:   modulev1connect.NewModuleServiceClient(server.Client(), "https://example.com"),
-		commitServiceClient:   modulev1connect.NewCommitServiceClient(server.Client(), "https://example.com"),
-		downloadServiceClient: modulev1connect.NewDownloadServiceClient(server.Client(), "https://example.com"),
-		resourceServiceClient: modulev1connect.NewResourceServiceClient(server.Client(), "https://example.com"),
-		graphServiceClient:    modulev1connect.NewGraphServiceClient(server.Client(), "https://example.com"),
+		moduleServiceClient:   modulev1connect.NewModuleServiceClient(httpClient, "https://example.com"),
+		commitServiceClient:   modulev1connect.NewCommitServiceClient(httpClient, "https://example.com"),
+		downloadServiceClient: modulev1connect.NewDownloadServiceClient(httpClient, "https://example.com"),
+		resourceServiceClient: modulev1connect.NewResourceServiceClient(httpClient, "https://example.com"),
+		graphServiceClient:    modulev1connect.NewGraphServiceClient(httpClient, "https://example.com"),
 	}
 }
 
@@ -238,14 +231,10 @@ func startFakeServerWithSlowModuleList(t *testing.T, delay time.Duration) *clien
 	mux := http.NewServeMux()
 	mux.Handle(modulev1connect.NewModuleServiceHandler(&fakeModuleServiceHandler{delay: delay}))
 
-	server, err := memhttp.New(mux)
-	attest.Ok(t, err, attest.Fatal())
-	t.Cleanup(func() {
-		attest.Ok(t, server.Close())
-	})
+	httpClient := inMemoryClient(t, mux)
 
 	return &client{
-		moduleServiceClient: modulev1connect.NewModuleServiceClient(server.Client(), "https://example.com"),
+		moduleServiceClient: modulev1connect.NewModuleServiceClient(httpClient, "https://example.com"),
 	}
 }
 
@@ -265,18 +254,14 @@ func startFakeServerForDocsCaching(t *testing.T) (*client, *fakeGraphServiceHand
 	mux.Handle(modulev1connect.NewResourceServiceHandler(&fakeResourceServiceHandler{}))
 	mux.Handle(modulev1connect.NewGraphServiceHandler(graphHandler))
 
-	server, err := memhttp.New(mux)
-	attest.Ok(t, err, attest.Fatal())
-	t.Cleanup(func() {
-		attest.Ok(t, server.Close())
-	})
+	httpClient := inMemoryClient(t, mux)
 
 	return &client{
-		moduleServiceClient:   modulev1connect.NewModuleServiceClient(server.Client(), "https://example.com"),
-		commitServiceClient:   modulev1connect.NewCommitServiceClient(server.Client(), "https://example.com"),
-		downloadServiceClient: modulev1connect.NewDownloadServiceClient(server.Client(), "https://example.com"),
-		resourceServiceClient: modulev1connect.NewResourceServiceClient(server.Client(), "https://example.com"),
-		graphServiceClient:    modulev1connect.NewGraphServiceClient(server.Client(), "https://example.com"),
+		moduleServiceClient:   modulev1connect.NewModuleServiceClient(httpClient, "https://example.com"),
+		commitServiceClient:   modulev1connect.NewCommitServiceClient(httpClient, "https://example.com"),
+		downloadServiceClient: modulev1connect.NewDownloadServiceClient(httpClient, "https://example.com"),
+		resourceServiceClient: modulev1connect.NewResourceServiceClient(httpClient, "https://example.com"),
+		graphServiceClient:    modulev1connect.NewGraphServiceClient(httpClient, "https://example.com"),
 	}, graphHandler
 }
 
@@ -323,10 +308,10 @@ func TestInitialNavigatingState(t *testing.T) {
 	c := startFakeServer(t)
 	m := newTestModel(c)
 
-	attest.Equal(t, m.state, modelStateNavigating)
-	attest.Equal(t, m.currentOwner, "")
-	attest.Equal(t, m.currentModule, "")
-	attest.Equal(t, m.err, nil)
+	ok.Equal(t, m.state, modelStateNavigating)
+	ok.Equal(t, m.currentOwner, "")
+	ok.Equal(t, m.currentModule, "")
+	ok.Equal(t, m.err, nil)
 }
 
 // Note: In Bubble Tea v2, teatest is not yet available with the stable charm.land
@@ -343,16 +328,16 @@ func TestListModulesCommand(t *testing.T) {
 
 	// Execute the listModules command
 	cmd := m.client.listModules("bufbuild")
-	attest.NotEqual(t, cmd, nil)
+	ok.True(t, cmd != nil, ok.Sprintf("expected a command"))
 
 	// Run the command and check the result
 	msg := cmd()
 
 	// Should return a modulesMsg
-	modules, ok := msg.(modulesMsg)
-	attest.True(t, ok, attest.Sprintf("expected modulesMsg, got %T", msg))
-	attest.True(t, len(modules) > 0, attest.Sprintf("expected modules, got %d", len(modules)))
-	attest.Equal(t, modules[0].Name, "bufbuild/registry")
+	modules, isModules := msg.(modulesMsg)
+	ok.True(t, isModules, ok.Sprintf("expected modulesMsg, got %T", msg))
+	ok.True(t, len(modules) > 0, ok.Sprintf("expected modules, got %d", len(modules)))
+	ok.Equal(t, modules[0].Name, "bufbuild/registry")
 }
 
 // TestListCommitsCommand tests the listCommits client command.
@@ -364,16 +349,16 @@ func TestListCommitsCommand(t *testing.T) {
 
 	// Execute the listCommits command
 	cmd := m.client.listCommits("bufbuild", "registry")
-	attest.NotEqual(t, cmd, nil)
+	ok.True(t, cmd != nil, ok.Sprintf("expected a command"))
 
 	// Run the command
 	msg := cmd()
 
 	// Should return a commitsMsg
-	commits, ok := msg.(commitsMsg)
-	attest.True(t, ok, attest.Sprintf("expected commitsMsg, got %T", msg))
-	attest.True(t, len(commits.commits) > 0, attest.Sprintf("expected commits, got %d", len(commits.commits)))
-	attest.Equal(t, commits.commits[0].Id, "abc123def456")
+	commits, isCommits := msg.(commitsMsg)
+	ok.True(t, isCommits, ok.Sprintf("expected commitsMsg, got %T", msg))
+	ok.True(t, len(commits.commits) > 0, ok.Sprintf("expected commits, got %d", len(commits.commits)))
+	ok.Equal(t, commits.commits[0].Id, "abc123def456")
 }
 
 // TestGetCommitContentCommand tests the getCommitContent client command.
@@ -385,16 +370,16 @@ func TestGetCommitContentCommand(t *testing.T) {
 
 	// Execute the getCommitContent command
 	cmd := m.client.getCommitContent("abc123def456")
-	attest.NotEqual(t, cmd, nil)
+	ok.True(t, cmd != nil, ok.Sprintf("expected a command"))
 
 	// Run the command
 	msg := cmd()
 
 	// Should return a contentsMsg
-	content, ok := msg.(contentsMsg)
-	attest.True(t, ok, attest.Sprintf("expected contentsMsg, got %T", msg))
-	attest.True(t, len(content.Files) > 0, attest.Sprintf("expected files, got %d", len(content.Files)))
-	attest.Equal(t, content.Files[0].Path, "buf.yaml")
+	content, isContents := msg.(contentsMsg)
+	ok.True(t, isContents, ok.Sprintf("expected contentsMsg, got %T", msg))
+	ok.True(t, len(content.Files) > 0, ok.Sprintf("expected files, got %d", len(content.Files)))
+	ok.Equal(t, content.Files[0].Path, "buf.yaml")
 }
 
 // TestViewDisplay tests that the model renders correctly in different states.
@@ -440,7 +425,7 @@ func TestViewDisplay(t *testing.T) {
 			view := m.View()
 			viewContent := view.Content
 			for _, text := range tt.contains {
-				attest.True(t, strings.Contains(viewContent, text), attest.Sprintf("view should contain %q", text))
+				ok.True(t, strings.Contains(viewContent, text), ok.Sprintf("view should contain %q", text))
 			}
 		})
 	}
@@ -468,7 +453,7 @@ func TestModuleFilteringNoOSCCodes(t *testing.T) {
 	// Press "/" to enter filter mode.
 	m2, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	m = m2.(model)
-	attest.Equal(t, m.moduleList.FilterState(), list.Filtering)
+	ok.Equal(t, m.moduleList.FilterState(), list.Filtering)
 
 	// Type a filter term one rune at a time.
 	for _, r := range "reg" {
@@ -478,11 +463,11 @@ func TestModuleFilteringNoOSCCodes(t *testing.T) {
 
 	// The rendered view must not contain OSC escape sequences (ESC ] 8).
 	view := m.View()
-	attest.False(t, strings.Contains(view.Content, "\x1b]8"), attest.Sprintf(
+	ok.True(t, !strings.Contains(view.Content, "\x1b]8"), ok.Sprintf(
 		"module list filter view should not contain OSC hyperlink escape codes"))
 
 	// Module names should appear as plain text.
-	attest.True(t, strings.Contains(view.Content, "registry"), attest.Sprintf(
+	ok.True(t, strings.Contains(view.Content, "registry"), ok.Sprintf(
 		"module list filter view should contain plain module name"))
 
 	// Keybindings that would normally trigger actions must not fire while
@@ -491,9 +476,9 @@ func TestModuleFilteringNoOSCCodes(t *testing.T) {
 		m2, _ = m.Update(tea.KeyPressMsg{Code: rune(key[0]), Text: key})
 		m = m2.(model)
 		// The model must still be in filtering state — not navigating or erroring.
-		attest.Equal(t, m.state, modelStateBrowsingModules)
-		attest.Equal(t, m.moduleList.FilterState(), list.Filtering)
-		attest.Equal(t, m.err, nil)
+		ok.Equal(t, m.state, modelStateBrowsingModules)
+		ok.Equal(t, m.moduleList.FilterState(), list.Filtering)
+		ok.Equal(t, m.err, nil)
 	}
 }
 
@@ -564,16 +549,16 @@ func TestErrorRecovery(t *testing.T) {
 			m = m2.(model)
 
 			// Must never set m.err — that halts the app permanently.
-			attest.Equal(t, m.err, nil)
+			ok.Equal(t, m.err, nil)
 			// Must land in the expected state.
-			attest.Equal(t, m.state, tt.wantState)
-			attest.True(t, m.loadingDocs, attest.Sprintf("a generic errMsg unrelated to compileDocs must not clear loadingDocs"))
-			attest.Equal(t, m.docsErr, nil, attest.Sprintf("a generic errMsg unrelated to compileDocs must not populate docsErr"))
+			ok.Equal(t, m.state, tt.wantState)
+			ok.True(t, m.loadingDocs, ok.Sprintf("a generic errMsg unrelated to compileDocs must not clear loadingDocs"))
+			ok.Equal(t, m.docsErr, nil, ok.Sprintf("a generic errMsg unrelated to compileDocs must not populate docsErr"))
 			// Navigate errors must be surfaced via navigateErr, not m.err.
 			if tt.wantNavigateErr {
-				attest.NotEqual(t, m.navigateErr, nil)
+				ok.NotEqual(t, m.navigateErr, nil)
 			} else {
-				attest.Equal(t, m.navigateErr, nil)
+				ok.Equal(t, m.navigateErr, nil)
 			}
 		})
 	}
@@ -597,10 +582,10 @@ func TestDocsErrMsg(t *testing.T) {
 	m2, _ := m.Update(docsErrMsg{err: injected})
 	m = m2.(model)
 
-	attest.False(t, m.loadingDocs, attest.Sprintf("docsErrMsg should clear loadingDocs, leaving the docs tab stuck spinning otherwise"))
-	attest.ErrorIs(t, m.docsErr, injected)
-	attest.True(t, cancelled, attest.Sprintf("docsErrMsg should cancel the (already-finished) compile's context"))
-	attest.Equal(t, m.docsCancel, nil)
+	ok.True(t, !(m.loadingDocs), ok.Sprintf("docsErrMsg should clear loadingDocs, leaving the docs tab stuck spinning otherwise"))
+	ok.ErrorIs(t, m.docsErr, injected)
+	ok.True(t, cancelled, ok.Sprintf("docsErrMsg should cancel the (already-finished) compile's context"))
+	ok.True(t, m.docsCancel == nil, ok.Sprintf("docsCancel should be cleared"))
 }
 
 // TestListModules_TimesOut verifies that a slow/hanging BSR backend can't
@@ -620,9 +605,9 @@ func TestListModules_TimesOut(t *testing.T) {
 	msg := c.listModules("someowner")()
 	elapsed := time.Since(start)
 
-	_, ok := msg.(errMsg)
-	attest.True(t, ok, attest.Sprintf("expected a timeout to surface as errMsg, got %T: %v", msg, msg))
-	attest.True(t, elapsed < time.Second, attest.Sprintf("expected the call to time out around rpcTimeout (50ms), took %v", elapsed))
+	_, isErr := msg.(errMsg)
+	ok.True(t, isErr, ok.Sprintf("expected a timeout to surface as errMsg, got %T: %v", msg, msg))
+	ok.True(t, elapsed < time.Second, ok.Sprintf("expected the call to time out around rpcTimeout (50ms), took %v", elapsed))
 }
 
 // TestDocsErr_ClearedOnSuccess verifies a stale docsErr from a previous
@@ -637,7 +622,7 @@ func TestDocsErr_ClearedOnSuccess(t *testing.T) {
 	m2, _ := m.Update(docsMsg{files: &protoregistry.Files{}})
 	m = m2.(model)
 
-	attest.Equal(t, m.docsErr, nil)
+	ok.Equal(t, m.docsErr, nil)
 }
 
 // TestDocsMsg_SkippedMessagesSurfaceAStatusMessage verifies that when
@@ -651,10 +636,10 @@ func TestDocsMsg_SkippedMessagesSurfaceAStatusMessage(t *testing.T) {
 	m := newTestModel(c)
 
 	_, cmd := m.Update(docsMsg{files: &protoregistry.Files{}, skipped: []string{"pkg.Legacy"}})
-	attest.NotEqual(t, cmd, nil)
+	ok.True(t, cmd != nil, ok.Sprintf("expected a command"))
 
 	_, cmd = m.Update(docsMsg{files: &protoregistry.Files{}})
-	attest.Equal(t, cmd, nil)
+	ok.True(t, cmd == nil, ok.Sprintf("expected no command"))
 }
 
 // TestCompileDocs_RespectsCancellation verifies that compileDocs actually
@@ -673,9 +658,9 @@ func TestCompileDocs_RespectsCancellation(t *testing.T) {
 	msg := c.compileDocs(ctx, "somecommit", nil)()
 	elapsed := time.Since(start)
 
-	_, ok := msg.(docsErrMsg)
-	attest.True(t, ok, attest.Sprintf("expected cancellation to surface as docsErrMsg, got %T: %v", msg, msg))
-	attest.True(t, elapsed < time.Second, attest.Sprintf("expected a near-instant return on an already-cancelled context, took %v", elapsed))
+	_, isDocsErr := msg.(docsErrMsg)
+	ok.True(t, isDocsErr, ok.Sprintf("expected cancellation to surface as docsErrMsg, got %T: %v", msg, msg))
+	ok.True(t, elapsed < time.Second, ok.Sprintf("expected a near-instant return on an already-cancelled context, took %v", elapsed))
 }
 
 // TestBack_CancelsInFlightDocsCompile verifies that backing out of a commit
@@ -698,9 +683,9 @@ func TestBack_CancelsInFlightDocsCompile(t *testing.T) {
 	m2, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = m2.(model)
 
-	attest.True(t, cancelled, attest.Sprintf("expected backing out of the commit to cancel the in-flight docs compile"))
-	attest.Equal(t, m.docsCancel, nil)
-	attest.Equal(t, m.state, modelStateLoadingCommits)
+	ok.True(t, cancelled, ok.Sprintf("expected backing out of the commit to cancel the in-flight docs compile"))
+	ok.True(t, m.docsCancel == nil, ok.Sprintf("docsCancel should be cleared"))
+	ok.Equal(t, m.state, modelStateLoadingCommits)
 }
 
 // TestCompileDocs_CachesByCommitID verifies that a second compileDocs call
@@ -718,19 +703,19 @@ func TestCompileDocs_CachesByCommitID(t *testing.T) {
 	}}
 
 	msg1 := c.compileDocs(context.Background(), "commitA", files)()
-	_, ok := msg1.(docsMsg)
-	attest.True(t, ok, attest.Sprintf("expected the first compile to succeed, got %T: %v", msg1, msg1))
-	attest.Equal(t, graphHandler.calls.Load(), int32(1))
+	_, isDocs := msg1.(docsMsg)
+	ok.True(t, isDocs, ok.Sprintf("expected the first compile to succeed, got %T: %v", msg1, msg1))
+	ok.Equal(t, graphHandler.calls.Load(), int32(1))
 
 	msg2 := c.compileDocs(context.Background(), "commitA", files)()
-	_, ok = msg2.(docsMsg)
-	attest.True(t, ok, attest.Sprintf("expected the second (cached) compile to succeed, got %T: %v", msg2, msg2))
-	attest.Equal(t, graphHandler.calls.Load(), int32(1), attest.Sprintf("repeat compile for the same commit should be served from cache, not hit the network again"))
+	_, isDocs = msg2.(docsMsg)
+	ok.True(t, isDocs, ok.Sprintf("expected the second (cached) compile to succeed, got %T: %v", msg2, msg2))
+	ok.Equal(t, graphHandler.calls.Load(), int32(1), ok.Sprintf("repeat compile for the same commit should be served from cache, not hit the network again"))
 
 	msg3 := c.compileDocs(context.Background(), "commitB", files)()
-	_, ok = msg3.(docsMsg)
-	attest.True(t, ok, attest.Sprintf("expected a different commit's compile to succeed, got %T: %v", msg3, msg3))
-	attest.Equal(t, graphHandler.calls.Load(), int32(2), attest.Sprintf("a different commit ID must not be served from another commit's cache entry"))
+	_, isDocs = msg3.(docsMsg)
+	ok.True(t, isDocs, ok.Sprintf("expected a different commit's compile to succeed, got %T: %v", msg3, msg3))
+	ok.Equal(t, graphHandler.calls.Load(), int32(2), ok.Sprintf("a different commit ID must not be served from another commit's cache entry"))
 }
 
 // TestDocsSearch_ActivateAndSubmit verifies the "/" search input activates
@@ -761,22 +746,40 @@ func TestDocsSearch_ActivateAndSubmit(t *testing.T) {
 
 	m2, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	m = m2.(model)
-	attest.True(t, m.docsSearchActive, attest.Sprintf("expected \"/\" to activate the docs search input while viewing a package"))
+	ok.True(t, m.docsSearchActive, ok.Sprintf("expected \"/\" to activate the docs search input while viewing a package"))
 
 	m.docsSearchInput.SetValue("findme")
 
 	m2, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = m2.(model)
-	attest.False(t, m.docsSearchActive, attest.Sprintf("search input should close after submitting a query"))
-	attest.Equal(t, len(m.docsMatches), 2, attest.Sprintf("expected 2 matches, got %v", m.docsMatches))
-	attest.Equal(t, m.docsMatchIdx, 0, attest.Sprintf("should jump to the first match on submit"))
+	ok.True(t, !(m.docsSearchActive), ok.Sprintf("search input should close after submitting a query"))
+	ok.Equal(t, len(m.docsMatches), 2, ok.Sprintf("expected 2 matches, got %v", m.docsMatches))
+	ok.Equal(t, m.docsMatchIdx, 0, ok.Sprintf("should jump to the first match on submit"))
 
 	m2, _ = m.Update(tea.KeyPressMsg{Code: 'n', Text: "n"})
 	m = m2.(model)
-	attest.Equal(t, m.docsMatchIdx, 1, attest.Sprintf("n should advance to the second match"))
-	attest.True(t, m.docsViewport.YOffset() > 0, attest.Sprintf("expected the viewport to scroll down to reveal the second match (line 39), stayed at yoffset=%d", m.docsViewport.YOffset()))
+	ok.Equal(t, m.docsMatchIdx, 1, ok.Sprintf("n should advance to the second match"))
+	ok.True(t, m.docsViewport.YOffset() > 0, ok.Sprintf("expected the viewport to scroll down to reveal the second match (line 39), stayed at yoffset=%d", m.docsViewport.YOffset()))
 
 	m2, _ = m.Update(tea.KeyPressMsg{Code: 'N', Text: "N"})
 	m = m2.(model)
-	attest.Equal(t, m.docsMatchIdx, 0, attest.Sprintf("N should wrap back to the first match"))
+	ok.Equal(t, m.docsMatchIdx, 0, ok.Sprintf("N should wrap back to the first match"))
+}
+
+// inMemoryClient serves mux on httptest's in-memory network -- no TCP, no
+// port exhaustion, and usable from testing/synctest -- and returns a client
+// for it. HTTPS, so connect gets the HTTP/2 that TLS negotiates.
+//
+// The CloseClientConnections cleanup is load-bearing. NewTestServer registers
+// its own cleanup calling Close, and Close waits for every in-flight handler
+// to return. startFakeServerWithSlowModuleList exists precisely to leave a
+// handler sleeping while the client gives up, so without this the wait would
+// outlast the test. Cleanups run last-registered-first, so registering this
+// one here tears the connections down before that wait begins.
+func inMemoryClient(t *testing.T, mux http.Handler) *http.Client {
+	t.Helper()
+	server := httptest.NewTestServer(t, mux)
+	server.EnableHTTP2 = true
+	t.Cleanup(server.CloseClientConnections)
+	return server.Client()
 }

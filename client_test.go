@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"go.akshayshah.org/attest"
+	"go.vanburen.xyz/ok"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -52,9 +52,9 @@ func buildCustomOptionFDS(t *testing.T) []byte {
 	tmpFiles, err := protodesc.NewFiles(&descriptorpb.FileDescriptorSet{
 		File: []*descriptorpb.FileDescriptorProto{descProtoFDP, customFDP},
 	})
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 	extDesc, err := tmpFiles.FindDescriptorByName("custom.my_label")
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 	extType := dynamicpb.NewExtensionType(extDesc.(protoreflect.ExtensionDescriptor))
 
 	fieldOpts := &descriptorpb.FieldOptions{}
@@ -64,7 +64,7 @@ func buildCustomOptionFDS(t *testing.T) []byte {
 	fdsBytes, err := proto.Marshal(&descriptorpb.FileDescriptorSet{
 		File: []*descriptorpb.FileDescriptorProto{descProtoFDP, customFDP},
 	})
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 	return fdsBytes
 }
 
@@ -77,11 +77,11 @@ func TestResolveRegistry_DecodesCustomOption(t *testing.T) {
 	// custom option: field 50001 isn't a Go-registered extension anywhere in
 	// this binary, so it lands in the FieldOptions' unknown fields.
 	var plainFDS descriptorpb.FileDescriptorSet
-	attest.Ok(t, proto.Unmarshal(fdsBytes, &plainFDS), attest.Fatal())
+	ok.MustNoError(t, proto.Unmarshal(fdsBytes, &plainFDS))
 	plainFiles, err := protodesc.NewFiles(&plainFDS)
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 	m, err := plainFiles.FindDescriptorByName("custom.M")
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 	fieldOpts := m.(protoreflect.MessageDescriptor).Fields().Get(0).Options()
 	sawExtension := false
 	fieldOpts.ProtoReflect().Range(func(fd protoreflect.FieldDescriptor, _ protoreflect.Value) bool {
@@ -90,14 +90,14 @@ func TestResolveRegistry_DecodesCustomOption(t *testing.T) {
 		}
 		return true
 	})
-	attest.False(t, sawExtension, attest.Sprintf("plain unmarshal should NOT resolve the custom option"))
+	ok.True(t, !(sawExtension), ok.Sprintf("plain unmarshal should NOT resolve the custom option"))
 
 	// resolveRegistry re-resolves options against the descriptor set's own
 	// extension declarations, so the custom option should now be visible.
 	regFiles, _, err := resolveRegistry(fdsBytes)
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 	resolvedM, err := regFiles.FindDescriptorByName("custom.M")
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 	resolvedFieldOpts := resolvedM.(protoreflect.MessageDescriptor).Fields().Get(0).Options()
 
 	var gotValue string
@@ -109,8 +109,8 @@ func TestResolveRegistry_DecodesCustomOption(t *testing.T) {
 		}
 		return true
 	})
-	attest.Equal(t, gotName, protoreflect.FullName("custom.my_label"))
-	attest.Equal(t, gotValue, "hello world")
+	ok.Equal(t, gotName, protoreflect.FullName("custom.my_label"))
+	ok.Equal(t, gotValue, "hello world")
 }
 
 func TestResolveRegistry_SkipsMessageSet(t *testing.T) {
@@ -161,14 +161,14 @@ func TestResolveRegistry_SkipsMessageSet(t *testing.T) {
 	}
 
 	fdsBytes, err := proto.Marshal(&descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{fdp}})
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 
 	// Confirm the premise: a naive build fails outright on the MessageSet
 	// message, taking every other type in the file down with it.
 	var plainFDS descriptorpb.FileDescriptorSet
-	attest.Ok(t, proto.Unmarshal(fdsBytes, &plainFDS), attest.Fatal())
+	ok.MustNoError(t, proto.Unmarshal(fdsBytes, &plainFDS))
 	_, err = protodesc.NewFiles(&plainFDS)
-	attest.True(t, err != nil, attest.Sprintf("expected the naive build to fail on the MessageSet message"))
+	ok.True(t, err != nil, ok.Sprintf("expected the naive build to fail on the MessageSet message"))
 
 	// resolveRegistry should skip just the MessageSet message and the
 	// now-dangling extension declaration against it, and still build
@@ -176,19 +176,19 @@ func TestResolveRegistry_SkipsMessageSet(t *testing.T) {
 	// which is a perfectly ordinary message that merely also happened to
 	// declare that extend block.
 	regFiles, skipped, err := resolveRegistry(fdsBytes)
-	attest.Ok(t, err, attest.Fatal())
-	attest.Equal(t, skipped, []string{"mset.Legacy"})
+	ok.MustNoError(t, err)
+	ok.DeepEqual(t, skipped, []string{"mset.Legacy"})
 
 	_, err = regFiles.FindDescriptorByName("mset.Legacy")
-	attest.True(t, err != nil, attest.Sprintf("the MessageSet message itself should have been skipped"))
+	ok.True(t, err != nil, ok.Sprintf("the MessageSet message itself should have been skipped"))
 
 	legacyExt, err := regFiles.FindDescriptorByName("mset.LegacyExtension")
-	attest.Ok(t, err, attest.Fatal())
-	attest.Equal(t, string(legacyExt.(protoreflect.MessageDescriptor).Fields().Get(0).Name()), "str")
+	ok.MustNoError(t, err)
+	ok.Equal(t, string(legacyExt.(protoreflect.MessageDescriptor).Fields().Get(0).Name()), "str")
 
 	fine, err := regFiles.FindDescriptorByName("mset.Fine")
-	attest.Ok(t, err, attest.Fatal())
-	attest.Equal(t, string(fine.(protoreflect.MessageDescriptor).Fields().Get(0).Name()), "ok")
+	ok.MustNoError(t, err)
+	ok.Equal(t, string(fine.(protoreflect.MessageDescriptor).Fields().Get(0).Name()), "ok")
 }
 
 func TestResolveRegistry_NoCustomOptions(t *testing.T) {
@@ -206,12 +206,12 @@ func TestResolveRegistry_NoCustomOptions(t *testing.T) {
 		}},
 	}
 	fdsBytes, err := proto.Marshal(&descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{fdp}})
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 
 	regFiles, skipped, err := resolveRegistry(fdsBytes)
-	attest.Ok(t, err, attest.Fatal())
-	attest.Equal(t, len(skipped), 0)
+	ok.MustNoError(t, err)
+	ok.Equal(t, len(skipped), 0)
 	m, err := regFiles.FindDescriptorByName("plain.M")
-	attest.Ok(t, err, attest.Fatal())
-	attest.Equal(t, string(m.(protoreflect.MessageDescriptor).Fields().Get(0).Name()), "x")
+	ok.MustNoError(t, err)
+	ok.Equal(t, string(m.(protoreflect.MessageDescriptor).Fields().Get(0).Name()), "x")
 }

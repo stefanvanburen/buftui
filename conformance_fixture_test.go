@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.akshayshah.org/attest"
+	"go.vanburen.xyz/ok"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
@@ -87,27 +87,29 @@ func TestConformanceFixture_Proto2Legacy(t *testing.T) {
 	// resolveRegistry's job specifically -- protodesc.NewFiles on its own
 	// still refuses the whole set outright.
 	fdsBytes, err := proto.Marshal(&descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{fdp}})
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 	files, skipped, err := resolveRegistry(fdsBytes)
-	attest.Ok(t, err, attest.Fatal())
-	attest.Equal(t, skipped, []string{"fixture.proto2.Legacy"})
+	ok.MustNoError(t, err)
+	ok.DeepEqual(t, skipped, []string{"fixture.proto2.Legacy"})
 	items := packagesFromDocs(files, map[string]bool{"fixture_proto2.proto": true})
-	attest.Equal(t, len(items), 1, attest.Fatal())
+	if !ok.Equal(t, len(items), 1) {
+		return
+	}
 	out := renderPackage(items[0].(*docsPackage), false)
 
 	// The MessageSet message itself is gone...
-	attest.False(t, strings.Contains(out, "message_set"), attest.Sprintf("MessageSet leaked into output: %q", out))
+	ok.True(t, !strings.Contains(out, "message_set"), ok.Sprintf("MessageSet leaked into output: %q", out))
 	// ...but the message that merely extended it survives, with its own
 	// field intact, and no dangling extend block for the removed type.
-	attest.True(t, strings.Contains(out, "LegacyExtension"), attest.Sprintf("sibling message wrongly removed: %q", out))
-	attest.True(t, strings.Contains(out, "str = 1"), attest.Sprintf("sibling message's own field missing: %q", out))
+	ok.True(t, strings.Contains(out, "LegacyExtension"), ok.Sprintf("sibling message wrongly removed: %q", out))
+	ok.True(t, strings.Contains(out, "str = 1"), ok.Sprintf("sibling message's own field missing: %q", out))
 	// proto2 cardinality keywords, all in the same message.
-	attest.True(t, strings.Contains(out, "optional string"), attest.Sprintf("optional keyword missing: %q", out))
-	attest.True(t, strings.Contains(out, "required int32"), attest.Sprintf("required keyword missing: %q", out))
-	attest.True(t, strings.Contains(out, "optional group Data"), attest.Sprintf("group keyword missing: %q", out))
+	ok.True(t, strings.Contains(out, "optional string"), ok.Sprintf("optional keyword missing: %q", out))
+	ok.True(t, strings.Contains(out, "required int32"), ok.Sprintf("required keyword missing: %q", out))
+	ok.True(t, strings.Contains(out, "optional group Data"), ok.Sprintf("group keyword missing: %q", out))
 	// Reserved and extension ranges on the same message as the group field.
-	attest.True(t, strings.Contains(out, "reserved 100 to 199;"), attest.Sprintf("reserved range missing: %q", out))
-	attest.True(t, strings.Contains(out, "extensions 300 to 399;"), attest.Sprintf("extension range missing: %q", out))
+	ok.True(t, strings.Contains(out, "reserved 100 to 199;"), ok.Sprintf("reserved range missing: %q", out))
+	ok.True(t, strings.Contains(out, "extensions 300 to 399;"), ok.Sprintf("extension range missing: %q", out))
 }
 
 // TestConformanceFixture_EditionsWireEncoding mirrors
@@ -172,21 +174,23 @@ func TestConformanceFixture_EditionsWireEncoding(t *testing.T) {
 
 	files := buildTestRegistry(t, fdp)
 	items := packagesFromDocs(files, map[string]bool{"fixture_editions.proto": true})
-	attest.Equal(t, len(items), 1, attest.Fatal())
+	if !ok.Equal(t, len(items), 1) {
+		return
+	}
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, `[features.message_encoding = DELIMITED]`), attest.Sprintf("file-level default missing: %q", out))
-	attest.False(t, strings.Contains(out, "group GroupLike"), attest.Sprintf("Editions has no group keyword: %q", out))
-	attest.True(t, strings.Contains(out, "inherited = 1"), attest.Sprintf("field inheriting the file default missing: %q", out))
+	ok.True(t, strings.Contains(out, `[features.message_encoding = DELIMITED]`), ok.Sprintf("file-level default missing: %q", out))
+	ok.True(t, !strings.Contains(out, "group GroupLike"), ok.Sprintf("Editions has no group keyword: %q", out))
+	ok.True(t, strings.Contains(out, "inherited = 1"), ok.Sprintf("field inheriting the file default missing: %q", out))
 	// Only the two fields with an explicit per-field override should carry a
 	// features.* annotation -- the one that just inherits the file default
 	// shouldn't (verified by count: exactly 2 field-level occurrences, plus
 	// the 1 file-level "message_encoding" already asserted above).
-	attest.Equal(t, strings.Count(out, "message_encoding"), 2, attest.Sprintf("expected exactly one file-level and one field-level message_encoding mention: %q", out))
-	attest.True(t, strings.Contains(out, "opted_out = 2"), attest.Sprintf("field with an explicit override missing: %q", out))
-	attest.True(t, strings.Contains(out, "[features.message_encoding = LENGTH_PREFIXED]"), attest.Sprintf("explicit per-field override missing: %q", out))
-	attest.True(t, strings.Contains(out, "expanded = 3"), attest.Sprintf("field with an explicit repeated_field_encoding override missing: %q", out))
-	attest.True(t, strings.Contains(out, "[features.repeated_field_encoding = EXPANDED]"), attest.Sprintf("explicit repeated_field_encoding override missing: %q", out))
+	ok.Equal(t, strings.Count(out, "message_encoding"), 2, ok.Sprintf("expected exactly one file-level and one field-level message_encoding mention: %q", out))
+	ok.True(t, strings.Contains(out, "opted_out = 2"), ok.Sprintf("field with an explicit override missing: %q", out))
+	ok.True(t, strings.Contains(out, "[features.message_encoding = LENGTH_PREFIXED]"), ok.Sprintf("explicit per-field override missing: %q", out))
+	ok.True(t, strings.Contains(out, "expanded = 3"), ok.Sprintf("field with an explicit repeated_field_encoding override missing: %q", out))
+	ok.True(t, strings.Contains(out, "[features.repeated_field_encoding = EXPANDED]"), ok.Sprintf("explicit repeated_field_encoding override missing: %q", out))
 }
 
 // TestConformanceFixture_Proto3Combined mirrors TestAllTypesProto3: a oneof,
@@ -229,15 +233,17 @@ func TestConformanceFixture_Proto3Combined(t *testing.T) {
 
 	files := buildTestRegistry(t, fdp)
 	items := packagesFromDocs(files, map[string]bool{"fixture_proto3.proto": true})
-	attest.Equal(t, len(items), 1, attest.Fatal())
+	if !ok.Equal(t, len(items), 1) {
+		return
+	}
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "[packed = true]"), attest.Sprintf("packed annotation missing: %q", out))
-	attest.True(t, strings.Contains(out, "oneof choice {"), attest.Sprintf("oneof block missing: %q", out))
-	attest.True(t, strings.Contains(out, "MOO = 1"), attest.Sprintf("first alias missing: %q", out))
-	attest.True(t, strings.Contains(out, "moo = 1"), attest.Sprintf("second alias missing: %q", out))
-	attest.Equal(t, strings.Count(out, "[alias of ALIAS_BAR]"), 2, attest.Sprintf("expected both MOO and moo to resolve to the same canonical alias: %q", out))
+	ok.True(t, strings.Contains(out, "[packed = true]"), ok.Sprintf("packed annotation missing: %q", out))
+	ok.True(t, strings.Contains(out, "oneof choice {"), ok.Sprintf("oneof block missing: %q", out))
+	ok.True(t, strings.Contains(out, "MOO = 1"), ok.Sprintf("first alias missing: %q", out))
+	ok.True(t, strings.Contains(out, "moo = 1"), ok.Sprintf("second alias missing: %q", out))
+	ok.Equal(t, strings.Count(out, "[alias of ALIAS_BAR]"), 2, ok.Sprintf("expected both MOO and moo to resolve to the same canonical alias: %q", out))
 	// None of the unusually-shaped field names should trip a false-positive
 	// json_name annotation.
-	attest.False(t, strings.Contains(out, "json_name"), attest.Sprintf("unexpected json_name annotation: %q", out))
+	ok.True(t, !strings.Contains(out, "json_name"), ok.Sprintf("unexpected json_name annotation: %q", out))
 }
