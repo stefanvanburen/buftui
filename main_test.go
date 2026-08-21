@@ -8,7 +8,7 @@ import (
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
 	"buf.build/go/protovalidate"
 	"github.com/charmbracelet/x/ansi"
-	"go.akshayshah.org/attest"
+	"go.vanburen.xyz/ok"
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
@@ -33,10 +33,10 @@ func TestParseRunFlags(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got, err := parseRunFlags(tc.args)
-			attest.Equal(t, err, nil)
-			attest.Equal(t, got.remote, tc.want.remote)
-			attest.Equal(t, got.token, tc.want.token)
-			attest.Equal(t, got.reference, tc.want.reference)
+			ok.Equal(t, err, nil)
+			ok.Equal(t, got.remote, tc.want.remote)
+			ok.Equal(t, got.token, tc.want.token)
+			ok.Equal(t, got.reference, tc.want.reference)
 		})
 	}
 }
@@ -115,14 +115,14 @@ func Test_parseReference(t *testing.T) {
 			t.Parallel()
 			gotRemote, gotResourceRef, gotErr := parseReference(tc.reference)
 			if tc.wantError {
-				attest.Error(t, gotErr)
+				ok.Error(t, gotErr)
 				if tc.wantValidationError {
 					err := &protovalidate.ValidationError{}
-					attest.True(t, errors.As(gotErr, &err))
+					ok.True(t, errors.As(gotErr, &err))
 				}
 			} else {
-				attest.Equal(t, gotRemote, tc.wantRemote)
-				attest.Equal(t, gotResourceRef, tc.wantResourceRef, attest.Cmp(protocmp.Transform()))
+				ok.Equal(t, gotRemote, tc.wantRemote)
+				ok.CmpEqual(t, gotResourceRef, tc.wantResourceRef, protocmp.Transform())
 			}
 		})
 	}
@@ -137,15 +137,15 @@ func TestDocsSearchMatches(t *testing.T) {
 	plain := "Hello World, hello again"
 
 	matches := docsSearchMatches(styled, "hello")
-	attest.Equal(t, len(matches), 2, attest.Sprintf("expected 2 case-insensitive matches, got %v", matches))
+	ok.Equal(t, len(matches), 2, ok.Sprintf("expected 2 case-insensitive matches, got %v", matches))
 	for _, m := range matches {
-		attest.Equal(t, len(m), 2)
+		ok.Equal(t, len(m), 2)
 		got := plain[m[0]:m[1]]
-		attest.True(t, strings.EqualFold(got, "hello"), attest.Sprintf("match range %v should cover \"hello\", got %q", m, got))
+		ok.True(t, strings.EqualFold(got, "hello"), ok.Sprintf("match range %v should cover \"hello\", got %q", m, got))
 	}
 
-	attest.Equal(t, len(docsSearchMatches(styled, "")), 0, attest.Sprintf("empty query should produce no matches"))
-	attest.Equal(t, len(docsSearchMatches(styled, "nonexistent")), 0)
+	ok.Equal(t, len(docsSearchMatches(styled, "")), 0, ok.Sprintf("empty query should produce no matches"))
+	ok.Equal(t, len(docsSearchMatches(styled, "nonexistent")), 0)
 }
 
 // TestDocsMatchLine verifies the 0-indexed line number is computed by
@@ -165,6 +165,6 @@ func TestDocsMatchLine(t *testing.T) {
 	content := "\x1b[1mline zero\x1b[0m\nline one\nline two has needle here\nline three"
 	needleOffset := strings.Index(ansi.Strip(content), "needle")
 
-	attest.Equal(t, docsMatchLine(content, 0), 0)
-	attest.Equal(t, docsMatchLine(content, needleOffset), 2)
+	ok.Equal(t, docsMatchLine(content, 0), 0)
+	ok.Equal(t, docsMatchLine(content, needleOffset), 2)
 }

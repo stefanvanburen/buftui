@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"go.vanburen.xyz/ok"
 	"time"
 
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
@@ -28,17 +30,13 @@ func TestCommitDepNodes(t *testing.T) {
 	nodes := commitDepNodes("buf.build", commits, modules, owners)
 
 	registry := nodes["commit1111111111111111111111111"]
-	if registry.label != "bufbuild/registry@commit111111" {
-		t.Errorf("registry label = %q, want %q", registry.label, "bufbuild/registry@commit111111")
-	}
-	if registry.href != "https://buf.build/bufbuild/registry/commits/commit1111111111111111111111111" {
-		t.Errorf("registry href = %q", registry.href)
-	}
+	ok.Equal(t, registry.label, "bufbuild/registry@commit111111", ok.Sprintf("registry label"))
+	ok.Equal(t, registry.href, "https://buf.build/bufbuild/registry/commits/commit1111111111111111111111111",
+		ok.Sprintf("registry href"))
 
 	protovalidate := nodes["commit2222222222222222222222222"]
-	if protovalidate.label != "alice/protovalidate@commit222222" {
-		t.Errorf("protovalidate label = %q, want %q (Organization vs User owner resolution)", protovalidate.label, "alice/protovalidate@commit222222")
-	}
+	ok.Equal(t, protovalidate.label, "alice/protovalidate@commit222222",
+		ok.Sprintf("protovalidate label (Organization vs User owner resolution)"))
 }
 
 func TestCommitDepNodes_UnresolvedModuleFallsBackToCommitID(t *testing.T) {
@@ -48,12 +46,8 @@ func TestCommitDepNodes_UnresolvedModuleFallsBackToCommitID(t *testing.T) {
 	nodes := commitDepNodes("buf.build", commits, nil, nil)
 
 	node := nodes["orphan-commit"]
-	if node.label != "orphan-commit" {
-		t.Errorf("label = %q, want fallback to commit ID", node.label)
-	}
-	if node.href != "" {
-		t.Errorf("href = %q, want empty when module can't be resolved", node.href)
-	}
+	ok.Equal(t, node.label, "orphan-commit", ok.Sprintf("label should fall back to the commit ID"))
+	ok.Zero(t, node.href, ok.Sprintf("href should be empty when the module can't be resolved"))
 }
 
 func TestRenderDepsTree_DiamondDependencyAndHyperlinks(t *testing.T) {
@@ -76,12 +70,10 @@ func TestRenderDepsTree_DiamondDependencyAndHyperlinks(t *testing.T) {
 
 	// protovalidate is a dependency of both registry and bufplugin -- it
 	// should appear twice (once under each parent), not deduplicated away.
-	if got := strings.Count(rendered, "bufbuild/protovalidate@ghi789"); got != 2 {
-		t.Errorf("protovalidate appeared %d times in the tree, want 2 (once per parent)\n%s", got, rendered)
-	}
-	if !strings.Contains(rendered, "\x1b]8;;https://buf.build/bufbuild/registry/commits/abc123\x07") {
-		t.Errorf("expected root node to carry an OSC 8 hyperlink to its commit page:\n%s", rendered)
-	}
+	ok.Equal(t, strings.Count(rendered, "bufbuild/protovalidate@ghi789"), 2,
+		ok.Sprintf("protovalidate should appear once per parent in the tree\n%s", rendered))
+	ok.True(t, strings.Contains(rendered, "\x1b]8;;https://buf.build/bufbuild/registry/commits/abc123\x07"),
+		ok.Sprintf("expected the root node to carry an OSC 8 hyperlink to its commit page:\n%s", rendered))
 }
 
 func TestRenderDepsTree_CycleDoesNotInfinitelyRecurse(t *testing.T) {
@@ -102,10 +94,9 @@ func TestRenderDepsTree_CycleDoesNotInfinitelyRecurse(t *testing.T) {
 	go func() { done <- renderDepsTree("a", edges, nodes) }()
 	select {
 	case rendered := <-done:
-		if !strings.Contains(rendered, "b") {
-			t.Errorf("expected cyclic dependency %q to still appear:\n%s", "b", rendered)
-		}
+		ok.True(t, strings.Contains(rendered, "b"),
+			ok.Sprintf("expected cyclic dependency %q to still appear:\n%s", "b", rendered))
 	case <-time.After(2 * time.Second):
-		t.Fatal("renderDepsTree did not return -- likely infinite recursion on a cycle")
+		ok.True(t, false, ok.Sprintf("renderDepsTree did not return -- likely infinite recursion on a cycle"))
 	}
 }

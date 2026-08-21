@@ -6,7 +6,7 @@ import (
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
-	"go.akshayshah.org/attest"
+	"go.vanburen.xyz/ok"
 )
 
 // TestShortHelp_BrowseSCM_GatedOnSourceControlURL verifies the "open source
@@ -32,13 +32,13 @@ func TestShortHelp_BrowseSCM_GatedOnSourceControlURL(t *testing.T) {
 	// pressing "O" must be a no-op (no crash, no state change, no error).
 	m.commitList.SetItems([]list.Item{withoutURL})
 	for _, b := range m.ShortHelp() {
-		attest.NotEqual(t, b.Help().Key, keys.BrowseSCM.Help().Key)
+		ok.NotEqual(t, b.Help().Key, keys.BrowseSCM.Help().Key)
 	}
 	m2, cmd := m.Update(tea.KeyPressMsg{Code: 'O', Text: "O"})
 	m = m2.(model)
-	attest.Equal(t, cmd, nil)
-	attest.Equal(t, m.err, nil)
-	attest.Equal(t, m.state, modelStateBrowsingCommits)
+	ok.True(t, cmd == nil, ok.Sprintf("expected no command"))
+	ok.Equal(t, m.err, nil)
+	ok.Equal(t, m.state, modelStateBrowsingCommits)
 
 	// With a SourceControlUrl: the binding is advertised in help.
 	m.commitList.SetItems([]list.Item{withURL})
@@ -48,5 +48,5 @@ func TestShortHelp_BrowseSCM_GatedOnSourceControlURL(t *testing.T) {
 			found = true
 		}
 	}
-	attest.True(t, found, attest.Sprintf("expected %q in short help when commit has a SourceControlUrl", keys.BrowseSCM.Help().Key))
+	ok.True(t, found, ok.Sprintf("expected %q in short help when commit has a SourceControlUrl", keys.BrowseSCM.Help().Key))
 }

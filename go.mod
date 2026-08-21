@@ -17,8 +17,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/cli/browser v1.3.0
 	github.com/jdx/go-netrc v1.0.0
-	go.akshayshah.org/attest v1.1.0
-	go.akshayshah.org/memhttp v0.1.0
+	go.vanburen.xyz/ok v0.4.0
 	google.golang.org/protobuf v1.36.11
 )
 
@@ -49,6 +48,7 @@ require (
 	github.com/petermattis/goid v0.0.0-20250319124200-ccd6737f222a // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sahilm/fuzzy v0.1.3 // indirect
+	github.com/stefanvanburen/colorcmp v0.3.0 // indirect
 	github.com/tidwall/btree v1.8.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yuin/goldmark v1.7.13 // indirect
@@ -60,11 +60,13 @@ require (
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/tools v0.44.1-0.20260420230617-19499e7caabc // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260223185530-2f722ef697dc // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260223185530-2f722ef697dc // indirect
 	honnef.co/go/tools v0.8.0 // indirect
+	znkr.io/diff v1.0.0 // indirect
 )
 
 tool honnef.co/go/tools/cmd/staticcheck

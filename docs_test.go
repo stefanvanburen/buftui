@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
-	"go.akshayshah.org/attest"
+	"go.vanburen.xyz/ok"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -19,7 +19,7 @@ import (
 func buildTestRegistry(t *testing.T, fdp *descriptorpb.FileDescriptorProto) *protoregistry.Files {
 	t.Helper()
 	files, err := protodesc.NewFiles(&descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{fdp}})
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 	return files
 }
 
@@ -53,9 +53,9 @@ func buildExtensionType(t *testing.T, extendee, name string, number int32, typ d
 		}},
 	}
 	files, err := protodesc.NewFiles(&descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{descProtoFDP, extFDP}})
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 	d, err := files.FindDescriptorByName(protoreflect.FullName("testext." + name))
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 	return dynamicpb.NewExtensionType(d.(protoreflect.ExtensionDescriptor))
 }
 
@@ -105,7 +105,7 @@ func TestCleanComment(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := cleanComment(tc.raw)
-			attest.Equal(t, got, tc.want)
+			ok.Equal(t, got, tc.want)
 		})
 	}
 }
@@ -155,28 +155,28 @@ func TestPackagesFromDocs_Ordering(t *testing.T) {
 	files := buildTestRegistry(t, fdp)
 	items := packagesFromDocs(files, map[string]bool{"test.proto": true})
 
-	attest.Equal(t, len(items), 1, attest.Sprintf("expected 1 package, got %d", len(items)))
+	ok.Equal(t, len(items), 1, ok.Sprintf("expected 1 package, got %d", len(items)))
 
 	pkg := items[0].(*docsPackage)
-	attest.Equal(t, pkg.name, "test")
+	ok.Equal(t, pkg.name, "test")
 
 	// Services sorted by FQN.
-	attest.Equal(t, len(pkg.services), 2)
-	attest.Equal(t, string(pkg.services[0].Name()), "AppleService")
-	attest.Equal(t, string(pkg.services[1].Name()), "ZebraService")
+	ok.Equal(t, len(pkg.services), 2)
+	ok.Equal(t, string(pkg.services[0].Name()), "AppleService")
+	ok.Equal(t, string(pkg.services[1].Name()), "ZebraService")
 
 	// Messages sorted by FQN.
-	attest.Equal(t, len(pkg.messages), 2)
-	attest.Equal(t, string(pkg.messages[0].Name()), "Apple")
-	attest.Equal(t, string(pkg.messages[1].Name()), "Zebra")
+	ok.Equal(t, len(pkg.messages), 2)
+	ok.Equal(t, string(pkg.messages[0].Name()), "Apple")
+	ok.Equal(t, string(pkg.messages[1].Name()), "Zebra")
 
 	// Enums.
-	attest.Equal(t, len(pkg.enums), 1)
-	attest.Equal(t, string(pkg.enums[0].Name()), "Status")
+	ok.Equal(t, len(pkg.enums), 1)
+	ok.Equal(t, string(pkg.enums[0].Name()), "Status")
 
 	// Extensions.
-	attest.Equal(t, len(pkg.extensions), 1)
-	attest.Equal(t, string(pkg.extensions[0].Name()), "my_ext")
+	ok.Equal(t, len(pkg.extensions), 1)
+	ok.Equal(t, string(pkg.extensions[0].Name()), "my_ext")
 }
 
 func TestPackagesFromDocs_MultiplePackages(t *testing.T) {
@@ -204,14 +204,14 @@ func TestPackagesFromDocs_MultiplePackages(t *testing.T) {
 	reg, err := protodesc.NewFiles(&descriptorpb.FileDescriptorSet{
 		File: []*descriptorpb.FileDescriptorProto{fdp1, fdp2},
 	})
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 
 	ownPaths := map[string]bool{"z.proto": true, "a.proto": true}
 	items := packagesFromDocs(reg, ownPaths)
 
-	attest.Equal(t, len(items), 2)
-	attest.Equal(t, items[0].(*docsPackage).name, "a.pkg")
-	attest.Equal(t, items[1].(*docsPackage).name, "z.pkg")
+	ok.Equal(t, len(items), 2)
+	ok.Equal(t, items[0].(*docsPackage).name, "a.pkg")
+	ok.Equal(t, items[1].(*docsPackage).name, "z.pkg")
 }
 
 func TestPackagesFromDocs_OwnPathFilter(t *testing.T) {
@@ -229,7 +229,7 @@ func TestPackagesFromDocs_OwnPathFilter(t *testing.T) {
 	files := buildTestRegistry(t, fdp)
 	// dep.proto is NOT in ownPaths — should return nothing.
 	items := packagesFromDocs(files, map[string]bool{"other.proto": true})
-	attest.Equal(t, len(items), 0)
+	ok.Equal(t, len(items), 0)
 }
 
 func TestPackagesFromDocs_SortsByFQN(t *testing.T) {
@@ -249,13 +249,13 @@ func TestPackagesFromDocs_SortsByFQN(t *testing.T) {
 	files := buildTestRegistry(t, fdp)
 	items := packagesFromDocs(files, map[string]bool{"fqn.proto": true})
 
-	attest.Equal(t, len(items), 1)
+	ok.Equal(t, len(items), 1)
 	pkg := items[0].(*docsPackage)
 	names := make([]string, len(pkg.messages))
 	for i, m := range pkg.messages {
 		names[i] = string(m.FullName())
 	}
-	attest.Equal(t, names, []string{"z.Apple", "z.Banana", "z.Mango"})
+	ok.DeepEqual(t, names, []string{"z.Apple", "z.Banana", "z.Mango"})
 }
 
 func TestIsDeprecated(t *testing.T) {
@@ -302,10 +302,10 @@ func TestIsDeprecated(t *testing.T) {
 		return false
 	})
 
-	attest.True(t, isDeprecated(oldMsg))
-	attest.False(t, isDeprecated(newMsg))
-	attest.True(t, isDeprecated(oldEnum))
-	attest.True(t, isDeprecated(oldSvc))
+	ok.True(t, isDeprecated(oldMsg))
+	ok.True(t, !(isDeprecated(newMsg)))
+	ok.True(t, isDeprecated(oldEnum))
+	ok.True(t, isDeprecated(oldSvc))
 }
 
 func TestPackageDescription(t *testing.T) {
@@ -334,12 +334,12 @@ func TestPackageDescription(t *testing.T) {
 
 	files := buildTestRegistry(t, fdp)
 	items := packagesFromDocs(files, map[string]bool{"desc.proto": true})
-	attest.Equal(t, len(items), 1)
+	ok.Equal(t, len(items), 1)
 
 	desc := items[0].(*docsPackage).Description()
-	attest.True(t, strings.Contains(desc, "1 service"), attest.Sprintf("description: %q", desc))
-	attest.True(t, strings.Contains(desc, "2 messages"), attest.Sprintf("description: %q", desc))
-	attest.True(t, strings.Contains(desc, "1 enum"), attest.Sprintf("description: %q", desc))
+	ok.True(t, strings.Contains(desc, "1 service"), ok.Sprintf("description: %q", desc))
+	ok.True(t, strings.Contains(desc, "2 messages"), ok.Sprintf("description: %q", desc))
+	ok.True(t, strings.Contains(desc, "1 enum"), ok.Sprintf("description: %q", desc))
 }
 
 func TestRenderMethod_IdempotencyAndDeprecation(t *testing.T) {
@@ -403,16 +403,16 @@ func TestRenderMethod_IdempotencyAndDeprecation(t *testing.T) {
 	idempotentOut := renderMethod(svc.Methods().Get(2), nil, typeStyle, dim, comment)
 	oldMethod := renderMethod(svc.Methods().Get(3), nil, typeStyle, dim, comment)
 
-	attest.False(t, strings.Contains(plain, "no side effects"),
-		attest.Sprintf("plain: %q", plain))
-	attest.False(t, strings.Contains(plain, "deprecated"),
-		attest.Sprintf("plain: %q", plain))
-	attest.True(t, strings.Contains(readOnly, "no side effects"),
-		attest.Sprintf("readOnly: %q", readOnly))
-	attest.True(t, strings.Contains(idempotentOut, "idempotent"),
-		attest.Sprintf("idempotent: %q", idempotentOut))
-	attest.True(t, strings.Contains(oldMethod, "deprecated"),
-		attest.Sprintf("oldMethod: %q", oldMethod))
+	ok.True(t, !strings.Contains(plain, "no side effects"),
+		ok.Sprintf("plain: %q", plain))
+	ok.True(t, !strings.Contains(plain, "deprecated"),
+		ok.Sprintf("plain: %q", plain))
+	ok.True(t, strings.Contains(readOnly, "no side effects"),
+		ok.Sprintf("readOnly: %q", readOnly))
+	ok.True(t, strings.Contains(idempotentOut, "idempotent"),
+		ok.Sprintf("idempotent: %q", idempotentOut))
+	ok.True(t, strings.Contains(oldMethod, "deprecated"),
+		ok.Sprintf("oldMethod: %q", oldMethod))
 }
 
 func TestFieldTypeName_Map(t *testing.T) {
@@ -470,9 +470,9 @@ func TestFieldTypeName_Map(t *testing.T) {
 	})
 
 	mapField := outerMsg.Fields().Get(0)
-	attest.True(t, mapField.IsMap(), attest.Sprintf("expected map field, got %v", mapField.Name()))
+	ok.True(t, mapField.IsMap(), ok.Sprintf("expected map field, got %v", mapField.Name()))
 	typeName := fieldTypeName(mapField)
-	attest.Equal(t, typeName, "map<string, Inner>")
+	ok.Equal(t, typeName, "map<string, Inner>")
 }
 
 func TestFieldTypeName_CrossPackage(t *testing.T) {
@@ -519,7 +519,7 @@ func TestFieldTypeName_CrossPackage(t *testing.T) {
 	reg, err := protodesc.NewFiles(&descriptorpb.FileDescriptorSet{
 		File: []*descriptorpb.FileDescriptorProto{dep, main},
 	})
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 
 	var req protoreflect.MessageDescriptor
 	reg.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
@@ -532,10 +532,10 @@ func TestFieldTypeName_CrossPackage(t *testing.T) {
 	crossPkgField := req.Fields().Get(0)
 	samePkgField := req.Fields().Get(1)
 
-	attest.Equal(t, fieldTypeName(crossPkgField), "other.OtherMsg",
-		attest.Sprintf("cross-package type should be FQN"))
-	attest.Equal(t, fieldTypeName(samePkgField), "Request",
-		attest.Sprintf("same-package type should be short name"))
+	ok.Equal(t, fieldTypeName(crossPkgField), "other.OtherMsg",
+		ok.Sprintf("cross-package type should be FQN"))
+	ok.Equal(t, fieldTypeName(samePkgField), "Request",
+		ok.Sprintf("same-package type should be short name"))
 }
 
 func TestRenderPackage_Oneof(t *testing.T) {
@@ -563,13 +563,13 @@ func TestRenderPackage_Oneof(t *testing.T) {
 	pkg := items[0].(*docsPackage)
 	out := renderPackage(pkg, false)
 
-	attest.True(t, strings.Contains(out, "standalone"), attest.Sprintf("standalone field missing: %q", out))
-	attest.True(t, strings.Contains(out, "oneof kind"), attest.Sprintf("oneof block header missing: %q", out))
-	attest.True(t, strings.Contains(out, "choice_a"), attest.Sprintf("oneof field missing: %q", out))
-	attest.True(t, strings.Contains(out, "choice_b"), attest.Sprintf("oneof field missing: %q", out))
+	ok.True(t, strings.Contains(out, "standalone"), ok.Sprintf("standalone field missing: %q", out))
+	ok.True(t, strings.Contains(out, "oneof kind"), ok.Sprintf("oneof block header missing: %q", out))
+	ok.True(t, strings.Contains(out, "choice_a"), ok.Sprintf("oneof field missing: %q", out))
+	ok.True(t, strings.Contains(out, "choice_b"), ok.Sprintf("oneof field missing: %q", out))
 	// standalone should appear before the oneof block
-	attest.True(t, strings.Index(out, "standalone") < strings.Index(out, "oneof kind"),
-		attest.Sprintf("standalone should precede oneof block"))
+	ok.True(t, strings.Index(out, "standalone") < strings.Index(out, "oneof kind"),
+		ok.Sprintf("standalone should precede oneof block"))
 }
 
 func TestRenderPackage_Reserved(t *testing.T) {
@@ -596,10 +596,10 @@ func TestRenderPackage_Reserved(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"reserved.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "reserved 2 to 4"), attest.Sprintf("range missing: %q", out))
-	attest.True(t, strings.Contains(out, "reserved 9"), attest.Sprintf("single reserved missing: %q", out))
-	attest.True(t, strings.Contains(out, `"old_field"`), attest.Sprintf("reserved name missing: %q", out))
-	attest.True(t, strings.Contains(out, `"legacy"`), attest.Sprintf("reserved name missing: %q", out))
+	ok.True(t, strings.Contains(out, "reserved 2 to 4"), ok.Sprintf("range missing: %q", out))
+	ok.True(t, strings.Contains(out, "reserved 9"), ok.Sprintf("single reserved missing: %q", out))
+	ok.True(t, strings.Contains(out, `"old_field"`), ok.Sprintf("reserved name missing: %q", out))
+	ok.True(t, strings.Contains(out, `"legacy"`), ok.Sprintf("reserved name missing: %q", out))
 }
 
 func TestRenderPackage_NestedMessages(t *testing.T) {
@@ -627,12 +627,12 @@ func TestRenderPackage_NestedMessages(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"nested.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "Outer"), attest.Sprintf("Outer missing: %q", out))
-	attest.True(t, strings.Contains(out, "Outer.Inner"), attest.Sprintf("Outer.Inner missing: %q", out))
-	attest.True(t, strings.Contains(out, "y"), attest.Sprintf("Inner field y missing: %q", out))
+	ok.True(t, strings.Contains(out, "Outer"), ok.Sprintf("Outer missing: %q", out))
+	ok.True(t, strings.Contains(out, "Outer.Inner"), ok.Sprintf("Outer.Inner missing: %q", out))
+	ok.True(t, strings.Contains(out, "y"), ok.Sprintf("Inner field y missing: %q", out))
 	// Outer.Inner must appear after Outer.
-	attest.True(t, strings.Index(out, "Outer.Inner") > strings.Index(out, "x"),
-		attest.Sprintf("nested section should follow parent fields"))
+	ok.True(t, strings.Index(out, "Outer.Inner") > strings.Index(out, "x"),
+		ok.Sprintf("nested section should follow parent fields"))
 }
 
 func TestRenderPackage_Syntax(t *testing.T) {
@@ -657,7 +657,7 @@ func TestRenderPackage_Syntax(t *testing.T) {
 			files := buildTestRegistry(t, fdp)
 			items := packagesFromDocs(files, map[string]bool{"syn.proto": true})
 			out := renderPackage(items[0].(*docsPackage), false)
-			attest.True(t, strings.Contains(out, tc.want), attest.Sprintf("syntax %q missing from %q", tc.want, out))
+			ok.True(t, strings.Contains(out, tc.want), ok.Sprintf("syntax %q missing from %q", tc.want, out))
 		})
 	}
 }
@@ -681,8 +681,8 @@ func TestRenderPackage_Edition(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"ed.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, `edition = "2023";`), attest.Sprintf("edition line missing: %q", out))
-	attest.False(t, strings.Contains(out, "syntax ="), attest.Sprintf("syntax line should not be present: %q", out))
+	ok.True(t, strings.Contains(out, `edition = "2023";`), ok.Sprintf("edition line missing: %q", out))
+	ok.True(t, !strings.Contains(out, "syntax ="), ok.Sprintf("syntax line should not be present: %q", out))
 }
 
 func TestRenderPackage_RuleUnderlineMatchesVisibleWidth(t *testing.T) {
@@ -715,8 +715,8 @@ func TestRenderPackage_RuleUnderlineMatchesVisibleWidth(t *testing.T) {
 			break
 		}
 	}
-	attest.True(t, headerLine != "", attest.Sprintf("couldn't find the annotated header line: %q", out))
-	attest.Equal(t, lipgloss.Width(ruleLine), lipgloss.Width(headerLine), attest.Sprintf("underline width should match visible header width -- header: %q, rule: %q", headerLine, ruleLine))
+	ok.True(t, headerLine != "", ok.Sprintf("couldn't find the annotated header line: %q", out))
+	ok.Equal(t, lipgloss.Width(ruleLine), lipgloss.Width(headerLine), ok.Sprintf("underline width should match visible header width -- header: %q, rule: %q", headerLine, ruleLine))
 }
 
 func TestRenderPackage_NestedRuleUnderlineMatchesVisibleWidth(t *testing.T) {
@@ -751,8 +751,8 @@ func TestRenderPackage_NestedRuleUnderlineMatchesVisibleWidth(t *testing.T) {
 			break
 		}
 	}
-	attest.True(t, headerLine != "", attest.Sprintf("couldn't find the annotated nested header line: %q", out))
-	attest.Equal(t, lipgloss.Width(ruleLine), lipgloss.Width(headerLine), attest.Sprintf("underline width should match visible header width -- header: %q, rule: %q", headerLine, ruleLine))
+	ok.True(t, headerLine != "", ok.Sprintf("couldn't find the annotated nested header line: %q", out))
+	ok.Equal(t, lipgloss.Width(ruleLine), lipgloss.Width(headerLine), ok.Sprintf("underline width should match visible header width -- header: %q, rule: %q", headerLine, ruleLine))
 }
 
 func TestRenderPackage_FileFeatureOverrides(t *testing.T) {
@@ -780,7 +780,7 @@ func TestRenderPackage_FileFeatureOverrides(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"feat.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "features.default_symbol_visibility = LOCAL_ALL"), attest.Sprintf("file-level feature override missing: %q", out))
+	ok.True(t, strings.Contains(out, "features.default_symbol_visibility = LOCAL_ALL"), ok.Sprintf("file-level feature override missing: %q", out))
 }
 
 func TestRenderPackage_NoFileFeatureOverrides(t *testing.T) {
@@ -797,7 +797,7 @@ func TestRenderPackage_NoFileFeatureOverrides(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"nofeat.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.False(t, strings.Contains(out, "features."), attest.Sprintf("no feature overrides should be shown: %q", out))
+	ok.True(t, !strings.Contains(out, "features."), ok.Sprintf("no feature overrides should be shown: %q", out))
 }
 
 func TestRenderPackage_MessageEnumServiceFeatureOverrides(t *testing.T) {
@@ -843,9 +843,9 @@ func TestRenderPackage_MessageEnumServiceFeatureOverrides(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"msgfeat.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "features.field_presence = IMPLICIT"), attest.Sprintf("message-level feature override missing: %q", out))
-	attest.True(t, strings.Contains(out, "features.enum_type = CLOSED"), attest.Sprintf("enum-level feature override missing: %q", out))
-	attest.True(t, strings.Contains(out, "features.utf8_validation = NONE"), attest.Sprintf("service-level feature override missing: %q", out))
+	ok.True(t, strings.Contains(out, "features.field_presence = IMPLICIT"), ok.Sprintf("message-level feature override missing: %q", out))
+	ok.True(t, strings.Contains(out, "features.enum_type = CLOSED"), ok.Sprintf("enum-level feature override missing: %q", out))
+	ok.True(t, strings.Contains(out, "features.utf8_validation = NONE"), ok.Sprintf("service-level feature override missing: %q", out))
 }
 
 func TestRenderPackage_RequiredField(t *testing.T) {
@@ -868,15 +868,15 @@ func TestRenderPackage_RequiredField(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"req.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "required string"), attest.Sprintf("required keyword missing: %q", out))
-	attest.True(t, strings.Contains(out, "must_have"), attest.Sprintf("field name missing: %q", out))
-	attest.Equal(t, strings.Count(out, "required"), 1, attest.Sprintf("only must_have should be marked required: %q", out))
+	ok.True(t, strings.Contains(out, "required string"), ok.Sprintf("required keyword missing: %q", out))
+	ok.True(t, strings.Contains(out, "must_have"), ok.Sprintf("field name missing: %q", out))
+	ok.Equal(t, strings.Count(out, "required"), 1, ok.Sprintf("only must_have should be marked required: %q", out))
 
 	// proto2 requires every non-required, non-repeated field to be declared
 	// with an explicit "optional" keyword in source -- unlike proto3, where a
 	// bare field has implicit presence and no keyword at all.
-	attest.True(t, strings.Contains(out, "optional string"), attest.Sprintf("proto2 plain field missing 'optional' keyword: %q", out))
-	attest.True(t, strings.Contains(out, "optional_field"), attest.Sprintf("field name missing: %q", out))
+	ok.True(t, strings.Contains(out, "optional string"), ok.Sprintf("proto2 plain field missing 'optional' keyword: %q", out))
+	ok.True(t, strings.Contains(out, "optional_field"), ok.Sprintf("field name missing: %q", out))
 }
 
 func TestRenderPackage_NestedEnum(t *testing.T) {
@@ -905,11 +905,11 @@ func TestRenderPackage_NestedEnum(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"nestedenum.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "Outer.Status"), attest.Sprintf("Outer.Status missing: %q", out))
-	attest.True(t, strings.Contains(out, "STATUS_ACTIVE"), attest.Sprintf("enum value missing: %q", out))
+	ok.True(t, strings.Contains(out, "Outer.Status"), ok.Sprintf("Outer.Status missing: %q", out))
+	ok.True(t, strings.Contains(out, "STATUS_ACTIVE"), ok.Sprintf("enum value missing: %q", out))
 	// The nested enum should follow Outer's own fields.
-	attest.True(t, strings.Index(out, "Outer.Status") > strings.Index(out, "x"),
-		attest.Sprintf("nested enum should follow parent fields"))
+	ok.True(t, strings.Index(out, "Outer.Status") > strings.Index(out, "x"),
+		ok.Sprintf("nested enum should follow parent fields"))
 }
 
 func TestRenderPackage_ExtensionRanges(t *testing.T) {
@@ -935,8 +935,8 @@ func TestRenderPackage_ExtensionRanges(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"extrange.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "extensions 100 to 149;"), attest.Sprintf("bounded range missing: %q", out))
-	attest.True(t, strings.Contains(out, "extensions 1000 to max;"), attest.Sprintf("max range missing: %q", out))
+	ok.True(t, strings.Contains(out, "extensions 100 to 149;"), ok.Sprintf("bounded range missing: %q", out))
+	ok.True(t, strings.Contains(out, "extensions 1000 to max;"), ok.Sprintf("max range missing: %q", out))
 }
 
 func TestRenderPackage_Extension(t *testing.T) {
@@ -967,9 +967,9 @@ func TestRenderPackage_Extension(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"ext.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "extend ext.Base {"), attest.Sprintf("extend block missing: %q", out))
-	attest.True(t, strings.Contains(out, "repeated string"), attest.Sprintf("repeated keyword missing: %q", out))
-	attest.True(t, strings.Contains(out, "repeated_ext"), attest.Sprintf("extension field name missing: %q", out))
+	ok.True(t, strings.Contains(out, "extend ext.Base {"), ok.Sprintf("extend block missing: %q", out))
+	ok.True(t, strings.Contains(out, "repeated string"), ok.Sprintf("repeated keyword missing: %q", out))
+	ok.True(t, strings.Contains(out, "repeated_ext"), ok.Sprintf("extension field name missing: %q", out))
 }
 
 func TestRenderPackage_TopLevelExtensionDeprecatedNotDuplicated(t *testing.T) {
@@ -1005,7 +1005,7 @@ func TestRenderPackage_TopLevelExtensionDeprecatedNotDuplicated(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"extdep.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.Equal(t, strings.Count(out, "deprecated"), 1, attest.Sprintf("expected exactly one deprecated marker: %q", out))
+	ok.Equal(t, strings.Count(out, "deprecated"), 1, ok.Sprintf("expected exactly one deprecated marker: %q", out))
 }
 
 func TestRenderPackage_NestedExtension(t *testing.T) {
@@ -1041,8 +1041,8 @@ func TestRenderPackage_NestedExtension(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"nestedext.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "extend nx.Base {"), attest.Sprintf("nested extend block missing: %q", out))
-	attest.True(t, strings.Contains(out, "held_ext"), attest.Sprintf("nested extension field missing: %q", out))
+	ok.True(t, strings.Contains(out, "extend nx.Base {"), ok.Sprintf("nested extend block missing: %q", out))
+	ok.True(t, strings.Contains(out, "held_ext"), ok.Sprintf("nested extension field missing: %q", out))
 }
 
 func TestCustomOptionsAnnotation_Scalar(t *testing.T) {
@@ -1053,8 +1053,8 @@ func TestCustomOptionsAnnotation_Scalar(t *testing.T) {
 	proto.SetExtension(opts, extType, "hello")
 
 	got := customOptionsAnnotation(opts, nil)
-	attest.True(t, strings.Contains(got, "testext.my_label"), attest.Sprintf("extension name missing: %q", got))
-	attest.True(t, strings.Contains(got, `"hello"`), attest.Sprintf("extension value missing: %q", got))
+	ok.True(t, strings.Contains(got, "testext.my_label"), ok.Sprintf("extension name missing: %q", got))
+	ok.True(t, strings.Contains(got, `"hello"`), ok.Sprintf("extension value missing: %q", got))
 }
 
 func TestCustomOptionsAnnotation_Message(t *testing.T) {
@@ -1067,8 +1067,8 @@ func TestCustomOptionsAnnotation_Message(t *testing.T) {
 	proto.SetExtension(opts, extType, detailMsg)
 
 	got := customOptionsAnnotation(opts, nil)
-	attest.True(t, strings.Contains(got, "testext.my_detail"), attest.Sprintf("extension name missing: %q", got))
-	attest.True(t, strings.Contains(got, "widget"), attest.Sprintf("nested message value missing: %q", got))
+	ok.True(t, strings.Contains(got, "testext.my_detail"), ok.Sprintf("extension name missing: %q", got))
+	ok.True(t, strings.Contains(got, "widget"), ok.Sprintf("nested message value missing: %q", got))
 }
 
 // TestCustomOptionsAnnotation_AnyResolvesDynamicType covers a custom option
@@ -1106,21 +1106,21 @@ func TestCustomOptionsAnnotation_AnyResolvesDynamicType(t *testing.T) {
 	}
 
 	files, err := protodesc.NewFiles(&descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{descProtoFDP, anyFDP, extFDP}})
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 
 	extDesc, err := files.FindDescriptorByName("anyext.detail")
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 	extType := dynamicpb.NewExtensionType(extDesc.(protoreflect.ExtensionDescriptor))
 
 	detailDesc, err := files.FindDescriptorByName("anyext.Detail")
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 	detailMsg := dynamicpb.NewMessage(detailDesc.(protoreflect.MessageDescriptor))
 	detailMsg.Set(detailMsg.Descriptor().Fields().ByName("name"), protoreflect.ValueOfString("widget"))
 	detailBytes, err := proto.Marshal(detailMsg)
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 
 	anyDesc, err := files.FindDescriptorByName("google.protobuf.Any")
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 	anyMsg := dynamicpb.NewMessage(anyDesc.(protoreflect.MessageDescriptor))
 	anyFields := anyMsg.Descriptor().Fields()
 	anyMsg.Set(anyFields.ByName("type_url"), protoreflect.ValueOfString("type.googleapis.com/anyext.Detail"))
@@ -1135,20 +1135,20 @@ func TestCustomOptionsAnnotation_AnyResolvesDynamicType(t *testing.T) {
 	// the readable substring "widget", so check for the unexpanded field
 	// shape rather than mere absence of that substring).
 	withoutResolver := customOptionsAnnotation(opts, nil)
-	attest.True(t, strings.Contains(withoutResolver, "type_url"), attest.Sprintf("expected raw Any fields without a resolver: %q", withoutResolver))
-	attest.False(t, strings.Contains(withoutResolver, `name:"widget"`), attest.Sprintf("inner message shouldn't be expanded without a resolver: %q", withoutResolver))
+	ok.True(t, strings.Contains(withoutResolver, "type_url"), ok.Sprintf("expected raw Any fields without a resolver: %q", withoutResolver))
+	ok.True(t, !strings.Contains(withoutResolver, `name:"widget"`), ok.Sprintf("inner message shouldn't be expanded without a resolver: %q", withoutResolver))
 
 	got := customOptionsAnnotation(opts, dynamicpb.NewTypes(files))
-	attest.True(t, strings.Contains(got, "anyext.detail"), attest.Sprintf("extension name missing: %q", got))
-	attest.True(t, strings.Contains(got, `name:"widget"`), attest.Sprintf("Any value should expand to show the inner message's fields: %q", got))
-	attest.False(t, strings.Contains(got, "type_url"), attest.Sprintf("Any should be expanded, not shown as raw type_url/value: %q", got))
+	ok.True(t, strings.Contains(got, "anyext.detail"), ok.Sprintf("extension name missing: %q", got))
+	ok.True(t, strings.Contains(got, `name:"widget"`), ok.Sprintf("Any value should expand to show the inner message's fields: %q", got))
+	ok.True(t, !strings.Contains(got, "type_url"), ok.Sprintf("Any should be expanded, not shown as raw type_url/value: %q", got))
 }
 
 func TestCustomOptionsAnnotation_NoOptions(t *testing.T) {
 	t.Parallel()
 
 	got := customOptionsAnnotation(&descriptorpb.FieldOptions{}, nil)
-	attest.Equal(t, got, "")
+	ok.Equal(t, got, "")
 }
 
 func TestCustomOptionsAnnotation_ExcludesStandardFields(t *testing.T) {
@@ -1156,7 +1156,7 @@ func TestCustomOptionsAnnotation_ExcludesStandardFields(t *testing.T) {
 
 	opts := &descriptorpb.FieldOptions{Deprecated: new(true)}
 	got := customOptionsAnnotation(opts, nil)
-	attest.Equal(t, got, "", attest.Sprintf("standard (non-extension) fields should not appear: %q", got))
+	ok.Equal(t, got, "", ok.Sprintf("standard (non-extension) fields should not appear: %q", got))
 }
 
 func TestRenderPackage_CustomOptions(t *testing.T) {
@@ -1224,16 +1224,16 @@ func TestRenderPackage_CustomOptions(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"custom.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "testext.table_name"), attest.Sprintf("message custom option missing: %q", out))
-	attest.True(t, strings.Contains(out, "widgets"), attest.Sprintf("message custom option value missing: %q", out))
-	attest.True(t, strings.Contains(out, "testext.validate_min"), attest.Sprintf("field custom option missing: %q", out))
-	attest.True(t, strings.Contains(out, "testext.http_get"), attest.Sprintf("method custom option missing: %q", out))
-	attest.True(t, strings.Contains(out, "/v1/widgets"), attest.Sprintf("method custom option value missing: %q", out))
-	attest.True(t, strings.Contains(out, "testext.enum_tag"), attest.Sprintf("enum custom option missing: %q", out))
-	attest.True(t, strings.Contains(out, "testext.value_tag"), attest.Sprintf("enum value custom option missing: %q", out))
-	attest.True(t, strings.Contains(out, "testext.service_tag"), attest.Sprintf("service custom option missing: %q", out))
+	ok.True(t, strings.Contains(out, "testext.table_name"), ok.Sprintf("message custom option missing: %q", out))
+	ok.True(t, strings.Contains(out, "widgets"), ok.Sprintf("message custom option value missing: %q", out))
+	ok.True(t, strings.Contains(out, "testext.validate_min"), ok.Sprintf("field custom option missing: %q", out))
+	ok.True(t, strings.Contains(out, "testext.http_get"), ok.Sprintf("method custom option missing: %q", out))
+	ok.True(t, strings.Contains(out, "/v1/widgets"), ok.Sprintf("method custom option value missing: %q", out))
+	ok.True(t, strings.Contains(out, "testext.enum_tag"), ok.Sprintf("enum custom option missing: %q", out))
+	ok.True(t, strings.Contains(out, "testext.value_tag"), ok.Sprintf("enum value custom option missing: %q", out))
+	ok.True(t, strings.Contains(out, "testext.service_tag"), ok.Sprintf("service custom option missing: %q", out))
 	// deprecated and the custom option should both show, without duplication.
-	attest.Equal(t, strings.Count(out, "deprecated"), 1, attest.Sprintf("expected exactly one deprecated marker: %q", out))
+	ok.Equal(t, strings.Count(out, "deprecated"), 1, ok.Sprintf("expected exactly one deprecated marker: %q", out))
 }
 
 func TestRenderField_DefaultValue(t *testing.T) {
@@ -1266,11 +1266,11 @@ func TestRenderField_DefaultValue(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"def.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, `[default = "hello"]`), attest.Sprintf("string default missing: %q", out))
-	attest.True(t, strings.Contains(out, "[default = 42]"), attest.Sprintf("int default missing: %q", out))
-	attest.True(t, strings.Contains(out, "[default = true]"), attest.Sprintf("bool default missing: %q", out))
-	attest.True(t, strings.Contains(out, "[default = BLUE]"), attest.Sprintf("enum default missing: %q", out))
-	attest.Equal(t, strings.Count(out, "[default"), 4, attest.Sprintf("plain field should not get a default annotation: %q", out))
+	ok.True(t, strings.Contains(out, `[default = "hello"]`), ok.Sprintf("string default missing: %q", out))
+	ok.True(t, strings.Contains(out, "[default = 42]"), ok.Sprintf("int default missing: %q", out))
+	ok.True(t, strings.Contains(out, "[default = true]"), ok.Sprintf("bool default missing: %q", out))
+	ok.True(t, strings.Contains(out, "[default = BLUE]"), ok.Sprintf("enum default missing: %q", out))
+	ok.Equal(t, strings.Count(out, "[default"), 4, ok.Sprintf("plain field should not get a default annotation: %q", out))
 }
 
 func TestRenderField_JSONNameOverride(t *testing.T) {
@@ -1299,8 +1299,8 @@ func TestRenderField_JSONNameOverride(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"j.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, `[json_name = "customName"]`), attest.Sprintf("json_name override missing: %q", out))
-	attest.Equal(t, strings.Count(out, "json_name"), 1, attest.Sprintf("only the genuine override should be flagged: %q", out))
+	ok.True(t, strings.Contains(out, `[json_name = "customName"]`), ok.Sprintf("json_name override missing: %q", out))
+	ok.Equal(t, strings.Count(out, "json_name"), 1, ok.Sprintf("only the genuine override should be flagged: %q", out))
 }
 
 func TestRenderField_ExplicitPacked(t *testing.T) {
@@ -1326,9 +1326,9 @@ func TestRenderField_ExplicitPacked(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"packed.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "[packed = true]"), attest.Sprintf("explicit packed=true missing: %q", out))
-	attest.True(t, strings.Contains(out, "[packed = false]"), attest.Sprintf("explicit packed=false missing: %q", out))
-	attest.Equal(t, strings.Count(out, "[packed"), 2, attest.Sprintf("field without an explicit option should not be annotated: %q", out))
+	ok.True(t, strings.Contains(out, "[packed = true]"), ok.Sprintf("explicit packed=true missing: %q", out))
+	ok.True(t, strings.Contains(out, "[packed = false]"), ok.Sprintf("explicit packed=false missing: %q", out))
+	ok.Equal(t, strings.Count(out, "[packed"), 2, ok.Sprintf("field without an explicit option should not be annotated: %q", out))
 }
 
 func TestRenderField_EditionsExplicitRepeatedFieldEncoding(t *testing.T) {
@@ -1365,8 +1365,8 @@ func TestRenderField_EditionsExplicitRepeatedFieldEncoding(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"edpacked.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "[features.repeated_field_encoding = EXPANDED]"), attest.Sprintf("explicit repeated_field_encoding override missing: %q", out))
-	attest.Equal(t, strings.Count(out, "repeated_field_encoding"), 1, attest.Sprintf("field without an explicit override should not be annotated: %q", out))
+	ok.True(t, strings.Contains(out, "[features.repeated_field_encoding = EXPANDED]"), ok.Sprintf("explicit repeated_field_encoding override missing: %q", out))
+	ok.Equal(t, strings.Count(out, "repeated_field_encoding"), 1, ok.Sprintf("field without an explicit override should not be annotated: %q", out))
 }
 
 func TestRenderField_DebugRedact(t *testing.T) {
@@ -1389,8 +1389,8 @@ func TestRenderField_DebugRedact(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"redact.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "[debug_redact]"), attest.Sprintf("debug_redact annotation missing: %q", out))
-	attest.Equal(t, strings.Count(out, "debug_redact"), 1, attest.Sprintf("only password should be annotated: %q", out))
+	ok.True(t, strings.Contains(out, "[debug_redact]"), ok.Sprintf("debug_redact annotation missing: %q", out))
+	ok.Equal(t, strings.Count(out, "debug_redact"), 1, ok.Sprintf("only password should be annotated: %q", out))
 }
 
 func TestRenderPackage_EnumAlias(t *testing.T) {
@@ -1415,10 +1415,10 @@ func TestRenderPackage_EnumAlias(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"alias.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "CRIMSON"), attest.Sprintf("alias value missing: %q", out))
-	attest.True(t, strings.Contains(out, "alias of RED"), attest.Sprintf("alias annotation missing: %q", out))
+	ok.True(t, strings.Contains(out, "CRIMSON"), ok.Sprintf("alias value missing: %q", out))
+	ok.True(t, strings.Contains(out, "alias of RED"), ok.Sprintf("alias annotation missing: %q", out))
 	// RED and BLUE are canonical -- should not be flagged as aliases.
-	attest.Equal(t, strings.Count(out, "alias of"), 1, attest.Sprintf("only CRIMSON should be flagged: %q", out))
+	ok.Equal(t, strings.Count(out, "alias of"), 1, ok.Sprintf("only CRIMSON should be flagged: %q", out))
 }
 
 func TestRenderPackage_NestedEnumAlias(t *testing.T) {
@@ -1445,7 +1445,7 @@ func TestRenderPackage_NestedEnumAlias(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"nestedalias.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "alias of RED"), attest.Sprintf("nested alias annotation missing: %q", out))
+	ok.True(t, strings.Contains(out, "alias of RED"), ok.Sprintf("nested alias annotation missing: %q", out))
 }
 
 func TestRenderField_Group(t *testing.T) {
@@ -1482,9 +1482,9 @@ func TestRenderField_Group(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"group.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "group Result"), attest.Sprintf("singular group field missing 'group' keyword: %q", out))
-	attest.True(t, strings.Contains(out, "repeated group Results"), attest.Sprintf("repeated group field missing 'repeated group': %q", out))
-	attest.True(t, strings.Contains(out, "result = 1"), attest.Sprintf("group field name/number missing: %q", out))
+	ok.True(t, strings.Contains(out, "group Result"), ok.Sprintf("singular group field missing 'group' keyword: %q", out))
+	ok.True(t, strings.Contains(out, "repeated group Results"), ok.Sprintf("repeated group field missing 'repeated group': %q", out))
+	ok.True(t, strings.Contains(out, "result = 1"), ok.Sprintf("group field name/number missing: %q", out))
 }
 
 func TestRenderField_EditionsDelimitedEncoding(t *testing.T) {
@@ -1528,13 +1528,13 @@ func TestRenderField_EditionsDelimitedEncoding(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"delim.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.False(t, strings.Contains(out, "group"), attest.Sprintf("Editions delimited field should not use the (invalid) 'group' keyword: %q", out))
-	attest.True(t, strings.Contains(out, "Detail"), attest.Sprintf("delimited field's message type missing: %q", out))
-	attest.True(t, strings.Contains(out, "detail = 1"), attest.Sprintf("delimited field name/number missing: %q", out))
+	ok.True(t, !strings.Contains(out, "group"), ok.Sprintf("Editions delimited field should not use the (invalid) 'group' keyword: %q", out))
+	ok.True(t, strings.Contains(out, "Detail"), ok.Sprintf("delimited field's message type missing: %q", out))
+	ok.True(t, strings.Contains(out, "detail = 1"), ok.Sprintf("delimited field name/number missing: %q", out))
 	// With no "group" keyword available to signal the non-default wire
 	// encoding, the explicit feature override needs its own annotation, or
 	// the field looks like an ordinary length-prefixed message field.
-	attest.True(t, strings.Contains(out, "[features.message_encoding = DELIMITED]"), attest.Sprintf("explicit message_encoding override missing: %q", out))
+	ok.True(t, strings.Contains(out, "[features.message_encoding = DELIMITED]"), ok.Sprintf("explicit message_encoding override missing: %q", out))
 }
 
 func TestRenderField_EditionsNoMessageEncodingOverride(t *testing.T) {
@@ -1568,7 +1568,7 @@ func TestRenderField_EditionsNoMessageEncodingOverride(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"nodelim.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.False(t, strings.Contains(out, "message_encoding"), attest.Sprintf("field without an explicit override should not be annotated: %q", out))
+	ok.True(t, !strings.Contains(out, "message_encoding"), ok.Sprintf("field without an explicit override should not be annotated: %q", out))
 }
 
 func TestRenderPackage_Proto3OptionalField(t *testing.T) {
@@ -1596,10 +1596,10 @@ func TestRenderPackage_Proto3OptionalField(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"opt.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "optional string"), attest.Sprintf("optional keyword missing: %q", out))
-	attest.True(t, strings.Contains(out, "name = 1"), attest.Sprintf("field missing: %q", out))
-	attest.False(t, strings.Contains(out, "oneof"), attest.Sprintf("synthetic oneof should not render as a oneof block: %q", out))
-	attest.False(t, strings.Contains(out, "_name"), attest.Sprintf("synthetic oneof name should never leak into docs: %q", out))
+	ok.True(t, strings.Contains(out, "optional string"), ok.Sprintf("optional keyword missing: %q", out))
+	ok.True(t, strings.Contains(out, "name = 1"), ok.Sprintf("field missing: %q", out))
+	ok.True(t, !strings.Contains(out, "oneof"), ok.Sprintf("synthetic oneof should not render as a oneof block: %q", out))
+	ok.True(t, !strings.Contains(out, "_name"), ok.Sprintf("synthetic oneof name should never leak into docs: %q", out))
 }
 
 func TestRenderPackage_EnumReserved(t *testing.T) {
@@ -1626,10 +1626,10 @@ func TestRenderPackage_EnumReserved(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"enumres.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "reserved 5 to 10;"), attest.Sprintf("enum reserved range missing: %q", out))
-	attest.True(t, strings.Contains(out, "reserved 20;"), attest.Sprintf("enum single reserved missing: %q", out))
-	attest.True(t, strings.Contains(out, `"OLD_STATUS"`), attest.Sprintf("enum reserved name missing: %q", out))
-	attest.True(t, strings.Contains(out, `"LEGACY"`), attest.Sprintf("enum reserved name missing: %q", out))
+	ok.True(t, strings.Contains(out, "reserved 5 to 10;"), ok.Sprintf("enum reserved range missing: %q", out))
+	ok.True(t, strings.Contains(out, "reserved 20;"), ok.Sprintf("enum single reserved missing: %q", out))
+	ok.True(t, strings.Contains(out, `"OLD_STATUS"`), ok.Sprintf("enum reserved name missing: %q", out))
+	ok.True(t, strings.Contains(out, `"LEGACY"`), ok.Sprintf("enum reserved name missing: %q", out))
 }
 
 func TestRenderPackage_ExtensionRangeCustomOption(t *testing.T) {
@@ -1655,9 +1655,9 @@ func TestRenderPackage_ExtensionRangeCustomOption(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"extrangeopt.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "extensions 100 to 199;"), attest.Sprintf("extension range missing: %q", out))
-	attest.True(t, strings.Contains(out, "testext.range_owner"), attest.Sprintf("extension range custom option missing: %q", out))
-	attest.True(t, strings.Contains(out, "team-foo"), attest.Sprintf("extension range custom option value missing: %q", out))
+	ok.True(t, strings.Contains(out, "extensions 100 to 199;"), ok.Sprintf("extension range missing: %q", out))
+	ok.True(t, strings.Contains(out, "testext.range_owner"), ok.Sprintf("extension range custom option missing: %q", out))
+	ok.True(t, strings.Contains(out, "team-foo"), ok.Sprintf("extension range custom option value missing: %q", out))
 }
 
 func TestRenderPackage_ClosedEnum(t *testing.T) {
@@ -1684,7 +1684,7 @@ func TestRenderPackage_ClosedEnum(t *testing.T) {
 			files := buildTestRegistry(t, fdp)
 			items := packagesFromDocs(files, map[string]bool{"closed.proto": true})
 			out := renderPackage(items[0].(*docsPackage), false)
-			attest.Equal(t, strings.Contains(out, "[closed]"), tc.wantClosed, attest.Sprintf("closed=%v mismatch: %q", tc.wantClosed, out))
+			ok.Equal(t, strings.Contains(out, "[closed]"), tc.wantClosed, ok.Sprintf("closed=%v mismatch: %q", tc.wantClosed, out))
 		})
 	}
 }
@@ -1726,10 +1726,10 @@ func TestRenderPackage_SymbolVisibility(t *testing.T) {
 	items := packagesFromDocs(files, map[string]bool{"vis.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.True(t, strings.Contains(out, "[local]"), attest.Sprintf("local annotation missing: %q", out))
-	attest.True(t, strings.Contains(out, "[export]"), attest.Sprintf("export annotation missing: %q", out))
-	attest.Equal(t, strings.Count(out, "[local]"), 2, attest.Sprintf("expected LocalMsg and LocalEnum to both be annotated: %q", out))
-	attest.Equal(t, strings.Count(out, "[export]"), 1, attest.Sprintf("expected only ExportMsg to be annotated: %q", out))
+	ok.True(t, strings.Contains(out, "[local]"), ok.Sprintf("local annotation missing: %q", out))
+	ok.True(t, strings.Contains(out, "[export]"), ok.Sprintf("export annotation missing: %q", out))
+	ok.Equal(t, strings.Count(out, "[local]"), 2, ok.Sprintf("expected LocalMsg and LocalEnum to both be annotated: %q", out))
+	ok.Equal(t, strings.Count(out, "[export]"), 1, ok.Sprintf("expected only ExportMsg to be annotated: %q", out))
 }
 
 func TestRenderField_ExtensionJSONNameNotFlagged(t *testing.T) {
@@ -1759,10 +1759,10 @@ func TestRenderField_ExtensionJSONNameNotFlagged(t *testing.T) {
 	files, err := protodesc.NewFiles(&descriptorpb.FileDescriptorSet{
 		File: []*descriptorpb.FileDescriptorProto{descProtoFDP, fdp},
 	})
-	attest.Ok(t, err, attest.Fatal())
+	ok.MustNoError(t, err)
 
 	items := packagesFromDocs(files, map[string]bool{"extjson.proto": true})
 	out := renderPackage(items[0].(*docsPackage), false)
 
-	attest.False(t, strings.Contains(out, "json_name"), attest.Sprintf("extension field's automatic bracketed json_name should not be flagged as an override: %q", out))
+	ok.True(t, !strings.Contains(out, "json_name"), ok.Sprintf("extension field's automatic bracketed json_name should not be flagged as an override: %q", out))
 }

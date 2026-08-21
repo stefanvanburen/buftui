@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"go.vanburen.xyz/ok"
 	"time"
 
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
@@ -52,10 +54,7 @@ func TestShortenSourceControlURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := shortenSourceControlURL(tt.url)
-			if got != tt.want {
-				t.Errorf("shortenSourceControlURL(%q) = %q, want %q", tt.url, got, tt.want)
-			}
+			ok.Equal(t, shortenSourceControlURL(tt.url), tt.want, ok.Sprintf("shortenSourceControlURL(%q)", tt.url))
 		})
 	}
 }
@@ -68,9 +67,8 @@ func TestCommitDescription_SourceControlURL(t *testing.T) {
 		CreateTime: timestamppb.New(time.Now()),
 	}}
 	descWithoutURL := base.Description()
-	if strings.Contains(descWithoutURL, "@") {
-		t.Errorf("description %q should not contain a source control marker when URL is unset", descWithoutURL)
-	}
+	ok.True(t, !strings.Contains(descWithoutURL, "@"),
+		ok.Sprintf("description %q should not contain a source control marker when the URL is unset", descWithoutURL))
 
 	withURL := &commit{underlying: &modulev1.Commit{
 		Id:               "abc123",
@@ -78,7 +76,6 @@ func TestCommitDescription_SourceControlURL(t *testing.T) {
 		SourceControlUrl: "https://github.com/bufbuild/registry/commit/abc123def4567890",
 	}}
 	descWithURL := withURL.Description()
-	if !strings.Contains(descWithURL, "github.com/bufbuild/registry@abc123def456") {
-		t.Errorf("description %q should contain the shortened source control URL", descWithURL)
-	}
+	ok.True(t, strings.Contains(descWithURL, "github.com/bufbuild/registry@abc123def456"),
+		ok.Sprintf("description %q should contain the shortened source control URL", descWithURL))
 }
