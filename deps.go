@@ -7,20 +7,21 @@ import (
 
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
 	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
+	"charm.land/bubbles/v2/tree"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2/tree"
+	"charm.land/lipgloss/v2"
 	"connectrpc.com/connect"
 )
 
-// depsMsg carries the rendered dependency tree for a commit.
+// depsMsg carries the dependency tree for a commit.
 type depsMsg struct {
-	rendered string
+	root *tree.Node
 }
 
 type depsErrMsg struct{ err error }
 
 // getDeps fetches the full transitive dependency graph for commitID, resolves
-// every node's owner/module name, and renders it as a tree rooted at
+// every node's owner/module name, and builds a navigable tree rooted at
 // commitID, with each node hyperlinked (OSC 8) to its commit page on remote.
 // Edges are from_node -> to_node meaning "from_node depends on to_node"
 // (verified against the real BSR: e.g. bufbuild/registry -> bufbuild/bufplugin
@@ -69,8 +70,7 @@ func (c *client) getDeps(commitID, remote string) tea.Cmd {
 		}
 
 		nodes := commitDepNodes(remote, graph.Commits, modulesResp.Msg.Modules, ownersResp.Msg.Owners)
-		rendered := renderDepsTree(commitID, graph.Edges, nodes)
-		return depsMsg{rendered: rendered}
+		return depsMsg{root: depsTree(commitID, graph.Edges, nodes)}
 	}
 }
 
@@ -116,10 +116,21 @@ func ownerName(o *ownerv1.Owner) string {
 }
 
 // depNode is a single node's display text (plain, for sorting) and its
-// hyperlink target -- the commit's page on the BSR.
+// hyperlink target -- the commit's page on the BSR. It is stored as the tree
+// node's value, so the selected node can be opened or yanked (see
+// selectedDepNode).
 type depNode struct {
 	label string
 	href  string
+}
+
+// String renders the node as it appears in the tree: the label, hyperlinked
+// to its commit page when one is known.
+func (d depNode) String() string {
+	if d.href == "" {
+		return d.label
+	}
+	return renderHyperlink(d.label, d.href)
 }
 
 // commitDepNodes maps each commit ID in the graph to a depNode of the form
@@ -166,14 +177,14 @@ func ownerIDOf(o *ownerv1.Owner) string {
 	}
 }
 
-// renderDepsTree renders the dependency graph rooted at rootCommitID as a
-// tree, using edges (from_node depends on to_node) to find each node's
-// direct dependencies. Shared dependencies are rendered once under every
-// parent that requires them, matching how graph-visualization tools
-// typically display a DAG as a tree; a per-render visited-on-this-path set
-// guards against runaway recursion should the graph ever not be a DAG. Each
-// node is rendered as an OSC 8 hyperlink to its commit page.
-func renderDepsTree(rootCommitID string, edges []*modulev1.Graph_Edge, nodes map[string]depNode) string {
+// depsTree builds the dependency graph rooted at rootCommitID as a tree,
+// using edges (from_node depends on to_node) to find each node's direct
+// dependencies. Shared dependencies are rendered once under every parent that
+// requires them, matching how graph-visualization tools typically display a
+// DAG as a tree; a per-build visited-on-this-path set guards against runaway
+// recursion should the graph ever not be a DAG. Each node's value is its
+// depNode, rendered as an OSC 8 hyperlink to its commit page.
+func depsTree(rootCommitID string, edges []*modulev1.Graph_Edge, nodes map[string]depNode) *tree.Node {
 	children := make(map[string][]string)
 	for _, e := range edges {
 		children[e.FromNode.CommitId] = append(children[e.FromNode.CommitId], e.ToNode.CommitId)
@@ -184,20 +195,22 @@ func renderDepsTree(rootCommitID string, edges []*modulev1.Graph_Edge, nodes map
 		})
 	}
 
-	root := tree.Root(renderDepNode(rootCommitID, nodes))
+	root := tree.Root(depNodeOf(rootCommitID, nodes))
 	buildDepsTree(root, rootCommitID, children, nodes, map[string]bool{rootCommitID: true})
-	return root.String()
+	return root
 }
 
-func buildDepsTree(node *tree.Tree, commitID string, children map[string][]string, nodes map[string]depNode, visited map[string]bool) {
+func buildDepsTree(node *tree.Node, commitID string, children map[string][]string, nodes map[string]depNode, visited map[string]bool) {
 	for _, depID := range children[commitID] {
-		if visited[depID] {
-			// Already an ancestor of this path; render as a leaf to avoid
-			// infinite recursion instead of silently dropping it.
-			node.Child(renderDepNode(depID, nodes))
+		// A dep with no dependencies of its own is a leaf; so is one that's
+		// already an ancestor of this path, which is rendered as a leaf to
+		// avoid infinite recursion instead of being silently dropped. Leaves
+		// are added by value so they don't get an expand/collapse indicator.
+		if visited[depID] || len(children[depID]) == 0 {
+			node.Child(depNodeOf(depID, nodes))
 			continue
 		}
-		child := tree.Root(renderDepNode(depID, nodes))
+		child := tree.Root(depNodeOf(depID, nodes))
 		visited[depID] = true
 		buildDepsTree(child, depID, children, nodes, visited)
 		delete(visited, depID)
@@ -205,17 +218,52 @@ func buildDepsTree(node *tree.Tree, commitID string, children map[string][]strin
 	}
 }
 
-// renderDepNode renders a node's label, hyperlinked to its commit page when
-// one is known.
-func renderDepNode(commitID string, nodes map[string]depNode) string {
+// depNodeOf returns the depNode for commitID, falling back to a label-only
+// node for commits missing from the graph's commit list.
+func depNodeOf(commitID string, nodes map[string]depNode) depNode {
 	node, ok := nodes[commitID]
 	if !ok {
-		return commitID
+		return depNode{label: commitID}
 	}
-	if node.href == "" {
-		return node.label
+	return node
+}
+
+// selectedDepTreeNode returns the tree node under the cursor, or nil if the
+// tree is empty.
+func selectedDepTreeNode(model tree.Model) *tree.Node {
+	for _, node := range model.AllNodes() {
+		if node.IsSelected() {
+			return node
+		}
 	}
-	return renderHyperlink(node.label, node.href)
+	return nil
+}
+
+// selectedDepNode returns the depNode under the cursor in the deps tree, and
+// whether one was found.
+func selectedDepNode(model tree.Model) (depNode, bool) {
+	node := selectedDepTreeNode(model)
+	if node == nil {
+		return depNode{}, false
+	}
+	dep, ok := node.GivenValue().(depNode)
+	return dep, ok
+}
+
+// depsTreeStyles returns the tree styles for the deps tab: the default
+// enumerator/indenter guides, with the root and the node under the cursor
+// picked out in the app's accent color.
+func depsTreeStyles(isDark bool) tree.Styles {
+	styles := tree.DefaultStyles(isDark)
+	// Leave dependency labels in the terminal's default foreground -- most
+	// nodes are parents, and the default purple-on-gray scheme fights the
+	// OSC 8 underlining terminals add to the hyperlinked labels.
+	styles.NodeStyle = lipgloss.NewStyle()
+	styles.ParentNodeStyle = lipgloss.NewStyle()
+	styles.RootNodeStyle = lipgloss.NewStyle().Foreground(colorForeground).Bold(true)
+	styles.SelectedNodeStyle = lipgloss.NewStyle().Foreground(colorForeground).Bold(true)
+	styles.CursorStyle = styles.CursorStyle.Foreground(colorForeground)
+	return styles
 }
 
 func compareLabels(a, b string) int {

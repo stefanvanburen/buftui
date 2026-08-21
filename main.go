@@ -20,6 +20,7 @@ import (
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/tree"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
@@ -147,8 +148,9 @@ func run(_ context.Context, args []string) error {
 	docsViewport := viewport.New()
 	docsViewport.SoftWrap = true
 
-	depsViewport := viewport.New()
-	depsViewport.SoftWrap = true
+	// The deps tab renders a navigable tree; the app draws its own help bar.
+	depsTree := tree.New(nil, 0, 0)
+	depsTree.SetShowHelp(false)
 
 	model := model{
 		state:            initialState,
@@ -169,7 +171,7 @@ func run(_ context.Context, args []string) error {
 		labelsList:      labelsList,
 		docsList:        docsList,
 		docsViewport:    docsViewport,
-		depsViewport:    depsViewport,
+		depsTree:        depsTree,
 	}
 
 	if _, err := tea.NewProgram(model).Run(); err != nil {
@@ -250,13 +252,17 @@ type model struct {
 	docsMatches  [][]int
 	docsMatchIdx int
 
-	// currentDeps holds the rendered dependency tree for the current commit
-	// (see deps.go), fetched lazily on first entering the Deps tab rather
-	// than eagerly alongside docs -- it costs 3 RPCs (graph + batched
-	// module/owner name resolution) that most commit views never look at.
-	currentDeps string
+	// depsLoaded reports whether depsTree holds the dependency graph for the
+	// current commit (see deps.go). It's fetched lazily on first entering the
+	// Deps tab rather than eagerly alongside docs -- it costs 3 RPCs (graph +
+	// batched module/owner name resolution) that most commit views never
+	// look at.
+	depsLoaded  bool
 	loadingDeps bool
 	depsErr     error
+	// depsStatus is the result of the last yank/browse in the deps tab,
+	// shown beneath the tree until the next keypress there.
+	depsStatus string
 
 	// Tab state
 	activeCommitTab commitTab
@@ -268,7 +274,7 @@ type model struct {
 	labelsList      list.Model
 	docsList        list.Model
 	docsViewport    viewport.Model
-	depsViewport    viewport.Model
+	depsTree        tree.Model
 	fileViewport    viewport.Model
 	navigateInput   textinput.Model
 	help            help.Model
@@ -335,6 +341,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.docsList.SetDelegate(delegate)
 		}
 
+		m.depsTree.SetStyles(depsTreeStyles(msg.IsDark()))
+
 	case tea.WindowSizeMsg:
 		m.help.SetWidth(msg.Width)
 
@@ -353,8 +361,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.docsList.SetWidth(msg.Width / 3)
 		m.docsViewport.SetHeight(msg.Height - 7)
 		m.docsViewport.SetWidth(msg.Width * 2 / 3)
-		m.depsViewport.SetHeight(msg.Height - 7)
-		m.depsViewport.SetWidth(msg.Width)
+		// One line shorter than the other tabs: the deps status line below
+		// the tree is always reserved, so the tree never overflows.
+		m.depsTree.SetSize(msg.Width, msg.Height-8)
 		m.navigateInput.SetWidth(min(msg.Width, 50))
 
 	case resourceMsg:
@@ -477,10 +486,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.docsErr = nil
 		m.docsList.SetItems(nil)
 		// Reset deps state too -- it's specific to the commit just left.
-		m.currentDeps = ""
+		m.depsLoaded = false
 		m.loadingDeps = false
 		m.depsErr = nil
-		m.depsViewport.SetContent("")
+		m.depsStatus = ""
+		m.depsTree.SetNodes(tree.NewNode())
 		commitFiles := make([]list.Item, len(m.currentCommitFiles))
 		for i, currentCommitFile := range m.currentCommitFiles {
 			commitFiles[i] = &commitFile{underlying: currentCommitFile, remote: m.remote, owner: m.currentOwner, moduleName: m.currentModule, commitID: m.currentCommitID}
@@ -538,8 +548,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case depsMsg:
 		m.loadingDeps = false
 		m.depsErr = nil
-		m.currentDeps = msg.rendered
-		m.depsViewport.SetContent(m.currentDeps)
+		m.depsLoaded = true
+		m.depsTree.SetNodes(msg.root)
 		return m, nil
 
 	case depsErrMsg:
@@ -828,6 +838,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = modelStateBrowsingCommitContents
 				return m, nil
 			case modelStateBrowsingCommitContents:
+				if m.activeCommitTab == commitTabDeps {
+					// In the deps tree, ←/h collapses the node under the
+					// cursor; only once it's collapsed does it go back out
+					// to the commit list.
+					if node := selectedDepTreeNode(m.depsTree); node != nil && node.IsOpen() {
+						m.depsStatus = ""
+						m.depsTree.CloseCurrentNode()
+						return m, nil
+					}
+				}
 				if m.docsCancel != nil {
 					m.docsCancel()
 					m.docsCancel = nil
@@ -863,6 +883,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				text = m.buildBrowserURL("tree", commit.underlying.Id)
 				statusList = &m.commitList
 			case modelStateBrowsingCommitContents, modelStateBrowsingCommitFileContents:
+				if m.state == modelStateBrowsingCommitContents && m.activeCommitTab == commitTabDeps {
+					dep, ok := selectedDepNode(m.depsTree)
+					if !ok || dep.href == "" {
+						return m, nil
+					}
+					url := strings.TrimPrefix(dep.href, "https://")
+					m.depsStatus = "copied " + url
+					return m, tea.SetClipboard(url)
+				}
 				commitFile, ok := m.commitFilesList.SelectedItem().(*commitFile)
 				if !ok {
 					m.err = fmt.Errorf("invalid list item type: expected commitFile")
@@ -897,6 +926,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				url = m.buildBrowserURL("file", commitFile.underlying.Path)
 			case modelStateBrowsingCommitContents:
+				if m.activeCommitTab == commitTabDeps {
+					dep, ok := selectedDepNode(m.depsTree)
+					if !ok || dep.href == "" {
+						return m, nil
+					}
+					if err := browser.OpenURL(dep.href); err != nil {
+						m.depsStatus = lipgloss.NewStyle().Foreground(colorError).Render(fmt.Sprintf("opening URL %q: %s", dep.href, err))
+						return m, nil
+					}
+					m.depsStatus = "opened " + renderHyperlink(dep.href, dep.href)
+					return m, nil
+				}
 				list = m.commitFilesList
 				commitFile, ok := m.commitFilesList.SelectedItem().(*commitFile)
 				if !ok {
@@ -979,7 +1020,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case commitTabLabels:
 			m.labelsList, cmd = m.labelsList.Update(msg)
 		case commitTabDeps:
-			m.depsViewport, cmd = m.depsViewport.Update(msg)
+			if _, ok := msg.(tea.KeyPressMsg); ok {
+				// Any key that isn't yank/browse (those return above)
+				// clears the last status message.
+				m.depsStatus = ""
+			}
+			m.depsTree, cmd = m.depsTree.Update(msg)
 		case commitTabDocs:
 			prevIdx := m.docsList.Index()
 			m.docsList, cmd = m.docsList.Update(msg)
@@ -1083,7 +1129,7 @@ func (m model) View() tea.View {
 			} else if m.depsErr != nil {
 				contentView = lipgloss.NewStyle().Foreground(colorError).Render("Error loading dependencies: " + m.depsErr.Error())
 			} else {
-				contentView = m.depsViewport.View()
+				contentView = m.depsTree.View() + "\n" + m.depsStatus
 			}
 		case commitTabDocs:
 			if m.loadingDocs {
@@ -1376,7 +1422,7 @@ func (m *model) loadTabIfNeeded() tea.Cmd {
 		m.loadingLabels = true
 		return m.client.listLabels(m.currentOwner, m.currentModule)
 	}
-	if m.activeCommitTab == commitTabDeps && m.currentDeps == "" && !m.loadingDeps && m.depsErr == nil {
+	if m.activeCommitTab == commitTabDeps && !m.depsLoaded && !m.loadingDeps && m.depsErr == nil {
 		m.loadingDeps = true
 		return m.client.getDeps(m.currentCommitID, m.remote)
 	}
