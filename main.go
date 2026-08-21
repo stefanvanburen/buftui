@@ -313,28 +313,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyStyles(msg.IsDark())
 
 	case tea.WindowSizeMsg:
-		m.help.SetWidth(msg.Width)
-
-		m.moduleList.SetHeight(msg.Height - 5)
-		m.moduleList.SetWidth(msg.Width)
-		m.commitList.SetHeight(msg.Height - 5)
-		m.commitList.SetWidth(msg.Width)
-		// Commit content views account for the 2-line tab header above them.
-		m.commitFilesList.SetHeight(msg.Height - 7)
-		m.commitFilesList.SetWidth(msg.Width / 2)
-		m.fileViewport.SetHeight(msg.Height - 2)
-		m.fileViewport.SetWidth(msg.Width / 2)
-		m.labelsList.SetHeight(msg.Height - 7)
-		m.labelsList.SetWidth(msg.Width)
-		m.docsList.SetHeight(msg.Height - 7)
-		m.docsList.SetWidth(msg.Width / 3)
-		m.docsViewport.SetHeight(msg.Height - 7)
-		m.docsViewport.SetWidth(msg.Width * 2 / 3)
-		// The deps tab gets the same total height as the other tabs; the
-		// status bar above the tree takes two lines of it (one of them the
-		// list style's bottom padding).
-		m.depsTree.SetSize(msg.Width, msg.Height-9)
-		m.navigateInput.SetWidth(min(msg.Width, 50))
+		m.resize(msg.Width, msg.Height)
 
 	case resourceMsg:
 		switch retrievedResource := msg.retrievedResource.Value.(type) {
@@ -1118,9 +1097,13 @@ func (m model) View() tea.View {
 					m.docsList.View(),
 					docsViewStyle.Render(m.docsViewport.View()),
 				)
+				// The search row is reserved in resize whether or not the
+				// search is open, so render it either way.
+				searchView := ""
 				if m.docsSearchActive {
-					contentView += "\n/" + m.docsSearchInput.View()
+					searchView = "/" + m.docsSearchInput.View()
 				}
+				contentView += "\n" + searchView
 			}
 		}
 
@@ -1383,6 +1366,52 @@ func (m model) activeListIsFiltering() bool {
 }
 
 // loadTabIfNeeded fires any data-fetching command required by the newly active tab.
+// Height each view spends on chrome the component doesn't draw itself.
+const (
+	// listChromeHeight is the blank line and help bar under a top-level list.
+	listChromeHeight = 5
+	// commitTabChromeHeight adds the breadcrumb and tab bar that every commit
+	// content tab is drawn beneath.
+	commitTabChromeHeight = listChromeHeight + 2
+	// borderSize is what a rounded border costs a pane, per dimension.
+	borderSize = 2
+	// depsStatusHeight is the deps tab's status bar: its line, plus the list
+	// style's bottom padding.
+	depsStatusHeight = 2
+	// docsSearchHeight is the docs tab's search input. It's reserved whether
+	// or not the search is open, so opening it doesn't reflow the docs.
+	docsSearchHeight = 1
+)
+
+// resize lays out every component for a terminal of this size. Each commit
+// content tab fills the same box -- full width, commitTabChromeHeight rows
+// short of the terminal -- and anything drawn inside a border or beneath a
+// status line pays for that out of its own share, so the tabs stay the same
+// size as each other and none of them overruns the help bar.
+func (m *model) resize(width, height int) {
+	m.help.SetWidth(width)
+
+	m.moduleList.SetHeight(height - listChromeHeight)
+	m.moduleList.SetWidth(width)
+	m.commitList.SetHeight(height - listChromeHeight)
+	m.commitList.SetWidth(width)
+
+	contentHeight := height - commitTabChromeHeight
+	m.commitFilesList.SetHeight(contentHeight)
+	m.commitFilesList.SetWidth(width / 2)
+	m.fileViewport.SetHeight(contentHeight - borderSize)
+	m.fileViewport.SetWidth(width/2 - borderSize)
+	m.labelsList.SetHeight(contentHeight)
+	m.labelsList.SetWidth(width)
+	m.docsList.SetHeight(contentHeight)
+	m.docsList.SetWidth(width / 3)
+	m.docsViewport.SetHeight(contentHeight - borderSize - docsSearchHeight)
+	m.docsViewport.SetWidth(width*2/3 - borderSize)
+	m.depsTree.SetSize(width, contentHeight-depsStatusHeight)
+
+	m.navigateInput.SetWidth(min(width, 50))
+}
+
 // applyStyles restyles every component for a light or dark background. It
 // runs once at startup with defaultIsDark and again for real if the terminal
 // answers the background color query -- some (tmux) never do, and the app has
