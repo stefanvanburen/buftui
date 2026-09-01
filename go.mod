@@ -14,7 +14,7 @@ require (
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/bufbuild/httplb v0.4.1
 	github.com/bufbuild/protocompile v0.14.2-0.20260429155904-12ef1ef2ce91
-	github.com/charmbracelet/x/ansi v0.11.7
+	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/cli/browser v1.3.0
 	github.com/jdx/go-netrc v1.0.0
 	go.vanburen.xyz/ok v0.4.0
