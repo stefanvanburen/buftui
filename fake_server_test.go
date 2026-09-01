@@ -36,7 +36,9 @@ func (f *fakeModuleServiceHandler) ListModules(
 	ctx context.Context,
 	req *connect.Request[modulev1.ListModulesRequest],
 ) (*connect.Response[modulev1.ListModulesResponse], error) {
-	sleepOrDone(ctx, f.delay)
+	if err := sleepOrDone(ctx, f.delay); err != nil {
+		return nil, err
+	}
 	modules := []*modulev1.Module{
 		{
 			Id:          "mod1",
@@ -189,7 +191,9 @@ func (f *fakeGraphServiceHandler) GetGraph(
 	req *connect.Request[modulev1.GetGraphRequest],
 ) (*connect.Response[modulev1.GetGraphResponse], error) {
 	f.calls.Add(1)
-	sleepOrDone(ctx, f.delay)
+	if err := sleepOrDone(ctx, f.delay); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&modulev1.GetGraphResponse{
 		Graph: &modulev1.Graph{},
 	}), nil
@@ -767,21 +771,30 @@ func TestDocsSearch_ActivateAndSubmit(t *testing.T) {
 	ok.Equal(t, m.docsMatchIdx, 0, ok.Sprintf("N should wrap back to the first match"))
 }
 
-// sleepOrDone waits out d, or returns early if the request context is
-// cancelled -- which connect does when the client gives up on the call.
+// sleepOrDone waits out d and returns nil, or returns the context's error if
+// the request is cancelled first -- which connect does, on both ends, when
+// the client's deadline expires.
+//
+// Handlers must return that error rather than fall through to a success
+// response. connect propagates the client's deadline to the server, so both
+// contexts expire at the same instant; inside a bubble that instant is exact,
+// and a handler that answers anyway is racing the client's own timeout to see
+// whose outcome the test observes.
 //
 // A plain time.Sleep would leave the handler goroutine running past the point
 // the test cares about. Outside a bubble that is merely untidy; inside one it
 // is fatal, because a bubble's clock stops advancing the moment its root
 // goroutine exits, so a handler still parked in Sleep can never wake and
 // synctest reports the bubble as deadlocked.
-func sleepOrDone(ctx context.Context, d time.Duration) {
+func sleepOrDone(ctx context.Context, d time.Duration) error {
 	if d <= 0 {
-		return
+		return nil
 	}
 	select {
 	case <-time.After(d):
+		return nil
 	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
