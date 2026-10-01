@@ -10,7 +10,7 @@ require (
 	charm.land/bubbletea/v2 v2.0.8
 	charm.land/glamour/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6
-	connectrpc.com/connect v1.20.0
+	connectrpc.com/connect v1.21.0
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/bufbuild/httplb v0.4.1
 	github.com/bufbuild/protocompile v0.14.2-0.20260429155904-12ef1ef2ce91
