@@ -3,14 +3,14 @@ module go.vanburen.xyz/buftui
 go 1.27.0
 
 require (
-	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.20.0-20260713175918-10d915f5b43b.1
-	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.12-20260713175918-10d915f5b43b.1
+	buf.build/gen/go/bufbuild/registry/connectrpc/go v1.21.0-20260922134654-36be14124d5a.1
+	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.12-20260922134654-36be14124d5a.2
 	buf.build/go/protovalidate v1.3.0
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.0.8
 	charm.land/glamour/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6
-	connectrpc.com/connect v1.20.0
+	connectrpc.com/connect v1.21.0
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/bufbuild/httplb v0.4.1
 	github.com/bufbuild/protocompile v0.14.2-0.20260429155904-12ef1ef2ce91
