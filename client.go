@@ -8,12 +8,13 @@ import (
 	"sync"
 	"time"
 
-	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/module/v1/modulev1connect"
-	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/owner/v1/ownerv1connect"
+	"buf.build/gen/go/bufbuild/registry/connectrpc/go/v2/buf/registry/module/v1/modulev1connect"
+	"buf.build/gen/go/bufbuild/registry/connectrpc/go/v2/buf/registry/owner/v1/ownerv1connect"
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
 	ownerv1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/owner/v1"
 	tea "charm.land/bubbletea/v2"
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/bufbuild/protocompile/experimental/fdp"
 	"github.com/bufbuild/protocompile/experimental/incremental"
 	"github.com/bufbuild/protocompile/experimental/incremental/queries"
@@ -74,21 +75,23 @@ type client struct {
 	docsCache   map[string]docsCacheEntry
 }
 
-func newClient(httpClient connect.HTTPClient, remote, token string) *client {
-	authInterceptor := newAuthInterceptor(token)
-	options := connect.WithClientOptions(
-		connect.WithInterceptors(authInterceptor),
-		connect.WithHTTPGet(),
-	)
-	address := "https://" + remote
+func newClient(httpClient connecthttp.HTTPClient, remote, token string) *client {
+	transport := connecthttp.NewTransport(httpClient, "https://"+remote, connecthttp.WithHTTPGet())
+	return newClientWithTransport(transport, newAuthInterceptor(token))
+}
+
+// newClientWithTransport returns a client whose services all dispatch over
+// transport.
+func newClientWithTransport(transport connect.Transport, interceptors ...connect.ClientInterceptor) *client {
+	connectClient := connect.NewClient(transport, interceptors...)
 	return &client{
-		moduleServiceClient:   modulev1connect.NewModuleServiceClient(httpClient, address, options),
-		commitServiceClient:   modulev1connect.NewCommitServiceClient(httpClient, address, options),
-		downloadServiceClient: modulev1connect.NewDownloadServiceClient(httpClient, address, options),
-		resourceServiceClient: modulev1connect.NewResourceServiceClient(httpClient, address, options),
-		labelServiceClient:    modulev1connect.NewLabelServiceClient(httpClient, address, options),
-		graphServiceClient:    modulev1connect.NewGraphServiceClient(httpClient, address, options),
-		ownerServiceClient:    ownerv1connect.NewOwnerServiceClient(httpClient, address, options),
+		moduleServiceClient:   modulev1connect.NewModuleServiceClient(connectClient),
+		commitServiceClient:   modulev1connect.NewCommitServiceClient(connectClient),
+		downloadServiceClient: modulev1connect.NewDownloadServiceClient(connectClient),
+		resourceServiceClient: modulev1connect.NewResourceServiceClient(connectClient),
+		labelServiceClient:    modulev1connect.NewLabelServiceClient(connectClient),
+		graphServiceClient:    modulev1connect.NewGraphServiceClient(connectClient),
+		ownerServiceClient:    ownerv1connect.NewOwnerServiceClient(connectClient),
 	}
 }
 
@@ -125,7 +128,7 @@ func (c *client) listModules(currentOwner string) tea.Cmd {
 		var allModules []*modulev1.Module
 		pageToken := ""
 		for {
-			request := connect.NewRequest(&modulev1.ListModulesRequest{
+			request := &modulev1.ListModulesRequest{
 				PageSize:  pageSize,
 				PageToken: pageToken,
 				OwnerRefs: []*ownerv1.OwnerRef{
@@ -135,16 +138,16 @@ func (c *client) listModules(currentOwner string) tea.Cmd {
 						},
 					},
 				},
-			})
+			}
 			response, err := c.moduleServiceClient.ListModules(ctx, request)
 			if err != nil {
 				return errMsg{fmt.Errorf("listing modules: %w", err)}
 			}
-			allModules = append(allModules, response.Msg.Modules...)
-			if response.Msg.NextPageToken == "" {
+			allModules = append(allModules, response.Modules...)
+			if response.NextPageToken == "" {
 				break
 			}
-			pageToken = response.Msg.NextPageToken
+			pageToken = response.NextPageToken
 		}
 		return modulesMsg(allModules)
 	}
@@ -161,7 +164,7 @@ func (c *client) listCommits(currentOwner, currentModule string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 		defer cancel()
-		request := connect.NewRequest(&modulev1.ListCommitsRequest{
+		request := &modulev1.ListCommitsRequest{
 			PageSize: pageSize,
 			ResourceRef: &modulev1.ResourceRef{
 				Value: &modulev1.ResourceRef_Name_{
@@ -171,14 +174,14 @@ func (c *client) listCommits(currentOwner, currentModule string) tea.Cmd {
 					},
 				},
 			},
-		})
+		}
 		response, err := c.commitServiceClient.ListCommits(ctx, request)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting commits: %w", err)}
 		}
 		return commitsMsg{
-			commits:       response.Msg.Commits,
-			nextPageToken: response.Msg.NextPageToken,
+			commits:       response.Commits,
+			nextPageToken: response.NextPageToken,
 		}
 	}
 }
@@ -187,7 +190,7 @@ func (c *client) listMoreCommits(currentOwner, currentModule, pageToken string) 
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 		defer cancel()
-		request := connect.NewRequest(&modulev1.ListCommitsRequest{
+		request := &modulev1.ListCommitsRequest{
 			PageSize:  pageSize,
 			PageToken: pageToken,
 			ResourceRef: &modulev1.ResourceRef{
@@ -198,14 +201,14 @@ func (c *client) listMoreCommits(currentOwner, currentModule, pageToken string) 
 					},
 				},
 			},
-		})
+		}
 		response, err := c.commitServiceClient.ListCommits(ctx, request)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting more commits: %w", err)}
 		}
 		return moreCommitsMsg{
-			commits:       response.Msg.Commits,
-			nextPageToken: response.Msg.NextPageToken,
+			commits:       response.Commits,
+			nextPageToken: response.NextPageToken,
 		}
 	}
 }
@@ -216,7 +219,7 @@ func (c *client) getCommitContent(commitID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 		defer cancel()
-		request := connect.NewRequest(&modulev1.DownloadRequest{
+		request := &modulev1.DownloadRequest{
 			Values: []*modulev1.DownloadRequest_Value{
 				{
 					ResourceRef: &modulev1.ResourceRef{
@@ -226,15 +229,15 @@ func (c *client) getCommitContent(commitID string) tea.Cmd {
 					},
 				},
 			},
-		})
+		}
 		response, err := c.downloadServiceClient.Download(ctx, request)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting commit content: %w", err)}
 		}
-		if len(response.Msg.Contents) != 1 {
-			return errMsg{fmt.Errorf("requested 1 commit contents, got %v", len(response.Msg.Contents))}
+		if len(response.Contents) != 1 {
+			return errMsg{fmt.Errorf("requested 1 commit contents, got %v", len(response.Contents))}
 		}
-		return contentsMsg(response.Msg.Contents[0])
+		return contentsMsg(response.Contents[0])
 	}
 }
 
@@ -249,7 +252,7 @@ func (c *client) getResource(resourceName *modulev1.ResourceRef_Name) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 		defer cancel()
-		request := connect.NewRequest(&modulev1.GetResourcesRequest{
+		request := &modulev1.GetResourcesRequest{
 			ResourceRefs: []*modulev1.ResourceRef{
 				{
 					Value: &modulev1.ResourceRef_Name_{
@@ -257,17 +260,17 @@ func (c *client) getResource(resourceName *modulev1.ResourceRef_Name) tea.Cmd {
 					},
 				},
 			},
-		})
+		}
 		response, err := c.resourceServiceClient.GetResources(ctx, request)
 		if err != nil {
 			return errMsg{fmt.Errorf("getting resource: %w", err)}
 		}
-		if len(response.Msg.Resources) != 1 {
-			return errMsg{fmt.Errorf("requested 1 resource, got %v", len(response.Msg.Resources))}
+		if len(response.Resources) != 1 {
+			return errMsg{fmt.Errorf("requested 1 resource, got %v", len(response.Resources))}
 		}
 		return resourceMsg{
 			requestedResource: resourceName,
-			retrievedResource: response.Msg.Resources[0],
+			retrievedResource: response.Resources[0],
 		}
 	}
 }
@@ -279,7 +282,7 @@ func (c *client) listLabels(owner, module string) tea.Cmd {
 		var allLabels []*modulev1.Label
 		pageToken := ""
 		for {
-			request := connect.NewRequest(&modulev1.ListLabelsRequest{
+			request := &modulev1.ListLabelsRequest{
 				PageSize:  pageSize,
 				PageToken: pageToken,
 				ResourceRef: &modulev1.ResourceRef{
@@ -291,16 +294,16 @@ func (c *client) listLabels(owner, module string) tea.Cmd {
 					},
 				},
 				ArchiveFilter: modulev1.ListLabelsRequest_ARCHIVE_FILTER_UNARCHIVED_ONLY,
-			})
+			}
 			response, err := c.labelServiceClient.ListLabels(ctx, request)
 			if err != nil {
 				return errMsg{fmt.Errorf("listing labels: %w", err)}
 			}
-			allLabels = append(allLabels, response.Msg.Labels...)
-			if response.Msg.NextPageToken == "" {
+			allLabels = append(allLabels, response.Labels...)
+			if response.NextPageToken == "" {
 				break
 			}
-			pageToken = response.Msg.NextPageToken
+			pageToken = response.NextPageToken
 		}
 		return labelsMsg(allLabels)
 	}
@@ -310,7 +313,7 @@ func (c *client) fetchLabelSuggestions(owner, module string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 		defer cancel()
-		request := connect.NewRequest(&modulev1.ListLabelsRequest{
+		request := &modulev1.ListLabelsRequest{
 			PageSize: pageSize,
 			ResourceRef: &modulev1.ResourceRef{
 				Value: &modulev1.ResourceRef_Name_{
@@ -321,14 +324,14 @@ func (c *client) fetchLabelSuggestions(owner, module string) tea.Cmd {
 				},
 			},
 			ArchiveFilter: modulev1.ListLabelsRequest_ARCHIVE_FILTER_UNARCHIVED_ONLY,
-		})
+		}
 		response, err := c.labelServiceClient.ListLabels(ctx, request)
 		if err != nil {
 			// Suggestions are best-effort; ignore errors.
 			return navigateSuggestionsMsg(nil)
 		}
-		suggestions := make([]string, len(response.Msg.Labels))
-		for i, label := range response.Msg.Labels {
+		suggestions := make([]string, len(response.Labels))
+		for i, label := range response.Labels {
 			suggestions[i] = owner + "/" + module + ":" + label.Name
 		}
 		return navigateSuggestionsMsg(suggestions)
@@ -339,19 +342,19 @@ func (c *client) fetchModuleSuggestions(owner string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 		defer cancel()
-		request := connect.NewRequest(&modulev1.ListModulesRequest{
+		request := &modulev1.ListModulesRequest{
 			PageSize: pageSize,
 			OwnerRefs: []*ownerv1.OwnerRef{{
 				Value: &ownerv1.OwnerRef_Name{Name: owner},
 			}},
-		})
+		}
 		response, err := c.moduleServiceClient.ListModules(ctx, request)
 		if err != nil {
 			// Suggestions are best-effort; ignore errors.
 			return navigateSuggestionsMsg(nil)
 		}
-		suggestions := make([]string, len(response.Msg.Modules))
-		for i, mod := range response.Msg.Modules {
+		suggestions := make([]string, len(response.Modules))
+		for i, mod := range response.Modules {
 			suggestions[i] = owner + "/" + mod.Name
 		}
 		return navigateSuggestionsMsg(suggestions)
@@ -375,18 +378,18 @@ func (c *client) compileDocs(ctx context.Context, commitID string, currentFiles 
 		}
 
 		// 1. Get the full transitive dependency graph.
-		graphResp, err := c.graphServiceClient.GetGraph(ctx, connect.NewRequest(&modulev1.GetGraphRequest{
+		graphResp, err := c.graphServiceClient.GetGraph(ctx, &modulev1.GetGraphRequest{
 			ResourceRefs: []*modulev1.ResourceRef{{
 				Value: &modulev1.ResourceRef_Id{Id: commitID},
 			}},
-		}))
+		})
 		if err != nil {
 			return docsErrMsg{fmt.Errorf("getting dependency graph: %w", err)}
 		}
 
 		// 2. Collect dep commit IDs (everything in the graph except the current commit).
 		var depCommitIDs []string
-		for _, commit := range graphResp.Msg.Graph.Commits {
+		for _, commit := range graphResp.Graph.Commits {
 			if commit.Id != commitID {
 				depCommitIDs = append(depCommitIDs, commit.Id)
 			}
@@ -411,13 +414,13 @@ func (c *client) compileDocs(ctx context.Context, commitID string, currentFiles 
 					FileTypes: []modulev1.FileType{modulev1.FileType_FILE_TYPE_PROTO},
 				}
 			}
-			dlResp, err := c.downloadServiceClient.Download(ctx, connect.NewRequest(&modulev1.DownloadRequest{
+			dlResp, err := c.downloadServiceClient.Download(ctx, &modulev1.DownloadRequest{
 				Values: values,
-			}))
+			})
 			if err != nil {
 				return docsErrMsg{fmt.Errorf("downloading dependencies: %w", err)}
 			}
-			for _, content := range dlResp.Msg.Contents {
+			for _, content := range dlResp.Contents {
 				for _, f := range content.Files {
 					if strings.HasSuffix(f.Path, ".proto") {
 						fileMap.Add(f.Path, string(f.Content))
@@ -595,20 +598,17 @@ func stripMessageSets(fds *descriptorpb.FileDescriptorSet) []string {
 	return names
 }
 
-// newAuthInterceptor creates a client-only interceptor for adding authentication to requests.
-func newAuthInterceptor(token string) connect.UnaryInterceptorFunc {
-	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return connect.UnaryFunc(func(
-			ctx context.Context,
-			req connect.AnyRequest,
-		) (connect.AnyResponse, error) {
-			if !req.Spec().IsClient {
-				return nil, fmt.Errorf("auth interceptor is a client-only interceptor")
-			}
+// newAuthInterceptor returns an interceptor that sends token as a bearer
+// token on every request. An empty token sends no Authorization header.
+func newAuthInterceptor(token string) connect.ClientInterceptor {
+	return func(next connect.ClientFunc) connect.ClientFunc {
+		return func(ctx context.Context, spec connect.Spec) (connect.ClientStream, error) {
 			if token != "" {
-				req.Header().Set("Authorization", "Bearer "+token)
+				if info, ok := connect.CallInfoForClientContext(ctx); ok {
+					info.RequestHeader().Set("Authorization", "Bearer "+token)
+				}
 			}
-			return next(ctx, req)
-		})
-	})
+			return next(ctx, spec)
+		}
+	}
 }

@@ -11,7 +11,6 @@ import (
 	"charm.land/bubbles/v2/tree"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"connectrpc.com/connect"
 )
 
 // depsMsg carries the dependency tree for a commit, and the number of
@@ -42,15 +41,15 @@ func (c *client) getDeps(commitID, remote string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 		defer cancel()
 
-		graphResp, err := c.graphServiceClient.GetGraph(ctx, connect.NewRequest(&modulev1.GetGraphRequest{
+		graphResp, err := c.graphServiceClient.GetGraph(ctx, &modulev1.GetGraphRequest{
 			ResourceRefs: []*modulev1.ResourceRef{{
 				Value: &modulev1.ResourceRef_Id{Id: commitID},
 			}},
-		}))
+		})
 		if err != nil {
 			return depsErrMsg{fmt.Errorf("getting dependency graph: %w", err)}
 		}
-		graph := graphResp.Msg.Graph
+		graph := graphResp.Graph
 
 		// Resolve every commit's module_id to a Module (id, name, owner_id) in
 		// one batched call -- not once per commit.
@@ -59,28 +58,28 @@ func (c *client) getDeps(commitID, remote string) tea.Cmd {
 		for i, id := range moduleIDs {
 			moduleRefs[i] = &modulev1.ModuleRef{Value: &modulev1.ModuleRef_Id{Id: id}}
 		}
-		modulesResp, err := c.moduleServiceClient.GetModules(ctx, connect.NewRequest(&modulev1.GetModulesRequest{
+		modulesResp, err := c.moduleServiceClient.GetModules(ctx, &modulev1.GetModulesRequest{
 			ModuleRefs: moduleRefs,
-		}))
+		})
 		if err != nil {
 			return depsErrMsg{fmt.Errorf("resolving dependency modules: %w", err)}
 		}
 
 		// Resolve every module's owner_id to an Owner (User or Organization)
 		// name, again in one batched call.
-		ownerIDs := uniqueOwnerIDs(modulesResp.Msg.Modules)
+		ownerIDs := uniqueOwnerIDs(modulesResp.Modules)
 		ownerRefs := make([]*ownerv1.OwnerRef, len(ownerIDs))
 		for i, id := range ownerIDs {
 			ownerRefs[i] = &ownerv1.OwnerRef{Value: &ownerv1.OwnerRef_Id{Id: id}}
 		}
-		ownersResp, err := c.ownerServiceClient.GetOwners(ctx, connect.NewRequest(&ownerv1.GetOwnersRequest{
+		ownersResp, err := c.ownerServiceClient.GetOwners(ctx, &ownerv1.GetOwnersRequest{
 			OwnerRefs: ownerRefs,
-		}))
+		})
 		if err != nil {
 			return depsErrMsg{fmt.Errorf("resolving dependency owners: %w", err)}
 		}
 
-		nodes := commitDepNodes(remote, graph.Commits, modulesResp.Msg.Modules, ownersResp.Msg.Owners)
+		nodes := commitDepNodes(remote, graph.Commits, modulesResp.Modules, ownersResp.Owners)
 		return depsMsg{
 			root:  depsTree(commitID, graph.Edges, nodes),
 			count: reachableDepCount(commitID, graph.Edges),

@@ -1,24 +1,23 @@
 package main
 
 import (
-	"connectrpc.com/connect"
 	"context"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 
-	"buf.build/gen/go/bufbuild/registry/connectrpc/go/buf/registry/module/v1/modulev1connect"
+	"buf.build/gen/go/bufbuild/registry/connectrpc/go/v2/buf/registry/module/v1/modulev1connect"
 	modulev1 "buf.build/gen/go/bufbuild/registry/protocolbuffers/go/buf/registry/module/v1"
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connectinprocess"
 	"go.vanburen.xyz/ok"
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -34,8 +33,8 @@ type fakeModuleServiceHandler struct {
 
 func (f *fakeModuleServiceHandler) ListModules(
 	ctx context.Context,
-	req *connect.Request[modulev1.ListModulesRequest],
-) (*connect.Response[modulev1.ListModulesResponse], error) {
+	req *modulev1.ListModulesRequest,
+) (*modulev1.ListModulesResponse, error) {
 	if err := sleepOrDone(ctx, f.delay); err != nil {
 		return nil, err
 	}
@@ -62,9 +61,9 @@ func (f *fakeModuleServiceHandler) ListModules(
 		},
 	}
 
-	response := connect.NewResponse(&modulev1.ListModulesResponse{
+	response := &modulev1.ListModulesResponse{
 		Modules: modules,
-	})
+	}
 	return response, nil
 }
 
@@ -75,8 +74,8 @@ type fakeCommitServiceHandler struct {
 
 func (f *fakeCommitServiceHandler) ListCommits(
 	ctx context.Context,
-	req *connect.Request[modulev1.ListCommitsRequest],
-) (*connect.Response[modulev1.ListCommitsResponse], error) {
+	req *modulev1.ListCommitsRequest,
+) (*modulev1.ListCommitsResponse, error) {
 	commits := []*modulev1.Commit{
 		{
 			Id:               "abc123def456",
@@ -93,9 +92,9 @@ func (f *fakeCommitServiceHandler) ListCommits(
 		},
 	}
 
-	response := connect.NewResponse(&modulev1.ListCommitsResponse{
+	response := &modulev1.ListCommitsResponse{
 		Commits: commits,
-	})
+	}
 	return response, nil
 }
 
@@ -106,8 +105,8 @@ type fakeDownloadServiceHandler struct {
 
 func (f *fakeDownloadServiceHandler) Download(
 	ctx context.Context,
-	req *connect.Request[modulev1.DownloadRequest],
-) (*connect.Response[modulev1.DownloadResponse], error) {
+	req *modulev1.DownloadRequest,
+) (*modulev1.DownloadResponse, error) {
 	contents := []*modulev1.DownloadResponse_Content{
 		{
 			Commit: &modulev1.Commit{
@@ -131,9 +130,9 @@ func (f *fakeDownloadServiceHandler) Download(
 		},
 	}
 
-	response := connect.NewResponse(&modulev1.DownloadResponse{
+	response := &modulev1.DownloadResponse{
 		Contents: contents,
-	})
+	}
 	return response, nil
 }
 
@@ -144,12 +143,12 @@ type fakeResourceServiceHandler struct {
 
 func (f *fakeResourceServiceHandler) GetResources(
 	ctx context.Context,
-	req *connect.Request[modulev1.GetResourcesRequest],
-) (*connect.Response[modulev1.GetResourcesResponse], error) {
+	req *modulev1.GetResourcesRequest,
+) (*modulev1.GetResourcesResponse, error) {
 	resources := []*modulev1.Resource{}
 
 	// Check what type of resource was requested
-	for _, ref := range req.Msg.ResourceRefs {
+	for _, ref := range req.ResourceRefs {
 		if nameRef, isName := ref.Value.(*modulev1.ResourceRef_Name_); isName {
 			name := nameRef.Name
 			// Return a module resource by default
@@ -171,9 +170,9 @@ func (f *fakeResourceServiceHandler) GetResources(
 		}
 	}
 
-	response := connect.NewResponse(&modulev1.GetResourcesResponse{
+	response := &modulev1.GetResourcesResponse{
 		Resources: resources,
-	})
+	}
 	return response, nil
 }
 
@@ -188,39 +187,28 @@ type fakeGraphServiceHandler struct {
 
 func (f *fakeGraphServiceHandler) GetGraph(
 	ctx context.Context,
-	req *connect.Request[modulev1.GetGraphRequest],
-) (*connect.Response[modulev1.GetGraphResponse], error) {
+	req *modulev1.GetGraphRequest,
+) (*modulev1.GetGraphResponse, error) {
 	f.calls.Add(1)
 	if err := sleepOrDone(ctx, f.delay); err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&modulev1.GetGraphResponse{
+	return &modulev1.GetGraphResponse{
 		Graph: &modulev1.Graph{},
-	}), nil
+	}, nil
 }
 
 // startFakeServer creates an in-memory Buf registry service and returns a client.
 func startFakeServer(t *testing.T) *client {
 	t.Helper()
 
-	// Setup Connect handlers
-	mux := http.NewServeMux()
-	mux.Handle(modulev1connect.NewModuleServiceHandler(&fakeModuleServiceHandler{}))
-	mux.Handle(modulev1connect.NewCommitServiceHandler(&fakeCommitServiceHandler{}))
-	mux.Handle(modulev1connect.NewDownloadServiceHandler(&fakeDownloadServiceHandler{}))
-	mux.Handle(modulev1connect.NewResourceServiceHandler(&fakeResourceServiceHandler{}))
-	mux.Handle(modulev1connect.NewGraphServiceHandler(&fakeGraphServiceHandler{}))
-
-	httpClient := inMemoryClient(t, mux)
-
-	// Return a client with all services
-	return &client{
-		moduleServiceClient:   modulev1connect.NewModuleServiceClient(httpClient, "https://example.com"),
-		commitServiceClient:   modulev1connect.NewCommitServiceClient(httpClient, "https://example.com"),
-		downloadServiceClient: modulev1connect.NewDownloadServiceClient(httpClient, "https://example.com"),
-		resourceServiceClient: modulev1connect.NewResourceServiceClient(httpClient, "https://example.com"),
-		graphServiceClient:    modulev1connect.NewGraphServiceClient(httpClient, "https://example.com"),
-	}
+	server := connect.NewServer()
+	modulev1connect.RegisterModuleServiceHandler(server, &fakeModuleServiceHandler{})
+	modulev1connect.RegisterCommitServiceHandler(server, &fakeCommitServiceHandler{})
+	modulev1connect.RegisterDownloadServiceHandler(server, &fakeDownloadServiceHandler{})
+	modulev1connect.RegisterResourceServiceHandler(server, &fakeResourceServiceHandler{})
+	modulev1connect.RegisterGraphServiceHandler(server, &fakeGraphServiceHandler{})
+	return newClientWithTransport(connectinprocess.New(server))
 }
 
 // startFakeServerWithSlowModuleList is like startFakeServer, but ListModules
@@ -229,14 +217,9 @@ func startFakeServer(t *testing.T) *client {
 func startFakeServerWithSlowModuleList(t *testing.T, delay time.Duration) *client {
 	t.Helper()
 
-	mux := http.NewServeMux()
-	mux.Handle(modulev1connect.NewModuleServiceHandler(&fakeModuleServiceHandler{delay: delay}))
-
-	httpClient := inMemoryClient(t, mux)
-
-	return &client{
-		moduleServiceClient: modulev1connect.NewModuleServiceClient(httpClient, "https://example.com"),
-	}
+	server := connect.NewServer()
+	modulev1connect.RegisterModuleServiceHandler(server, &fakeModuleServiceHandler{delay: delay})
+	return newClientWithTransport(connectinprocess.New(server))
 }
 
 // startFakeServerForDocsCaching is like startFakeServer, but also returns
@@ -248,22 +231,13 @@ func startFakeServerForDocsCaching(t *testing.T) (*client, *fakeGraphServiceHand
 
 	graphHandler := &fakeGraphServiceHandler{}
 
-	mux := http.NewServeMux()
-	mux.Handle(modulev1connect.NewModuleServiceHandler(&fakeModuleServiceHandler{}))
-	mux.Handle(modulev1connect.NewCommitServiceHandler(&fakeCommitServiceHandler{}))
-	mux.Handle(modulev1connect.NewDownloadServiceHandler(&fakeDownloadServiceHandler{}))
-	mux.Handle(modulev1connect.NewResourceServiceHandler(&fakeResourceServiceHandler{}))
-	mux.Handle(modulev1connect.NewGraphServiceHandler(graphHandler))
-
-	httpClient := inMemoryClient(t, mux)
-
-	return &client{
-		moduleServiceClient:   modulev1connect.NewModuleServiceClient(httpClient, "https://example.com"),
-		commitServiceClient:   modulev1connect.NewCommitServiceClient(httpClient, "https://example.com"),
-		downloadServiceClient: modulev1connect.NewDownloadServiceClient(httpClient, "https://example.com"),
-		resourceServiceClient: modulev1connect.NewResourceServiceClient(httpClient, "https://example.com"),
-		graphServiceClient:    modulev1connect.NewGraphServiceClient(httpClient, "https://example.com"),
-	}, graphHandler
+	server := connect.NewServer()
+	modulev1connect.RegisterModuleServiceHandler(server, &fakeModuleServiceHandler{})
+	modulev1connect.RegisterCommitServiceHandler(server, &fakeCommitServiceHandler{})
+	modulev1connect.RegisterDownloadServiceHandler(server, &fakeDownloadServiceHandler{})
+	modulev1connect.RegisterResourceServiceHandler(server, &fakeResourceServiceHandler{})
+	modulev1connect.RegisterGraphServiceHandler(server, graphHandler)
+	return newClientWithTransport(connectinprocess.New(server)), graphHandler
 }
 
 // initialModel creates a model with a fake service client.
@@ -798,20 +772,30 @@ func sleepOrDone(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// inMemoryClient serves mux on httptest's in-memory network -- no TCP, no
-// port exhaustion, and usable from testing/synctest -- and returns a client
-// for it. HTTPS, so connect gets the HTTP/2 that TLS negotiates.
-//
-// The CloseClientConnections cleanup is load-bearing. NewTestServer registers
-// its own cleanup calling Close, and Close waits for every in-flight handler
-// to return. startFakeServerWithSlowModuleList exists precisely to leave a
-// handler sleeping while the client gives up, so without this the wait would
-// outlast the test. Cleanups run last-registered-first, so registering this
-// one here tears the connections down before that wait begins.
-func inMemoryClient(t *testing.T, mux http.Handler) *http.Client {
-	t.Helper()
-	server := httptest.NewTestServer(t, mux)
-	server.EnableHTTP2 = true
-	t.Cleanup(server.CloseClientConnections)
-	return server.Client()
+func TestAuthInterceptor(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		token string
+		want  string
+	}{
+		{token: "secret", want: "Bearer secret"},
+		{token: "", want: ""},
+	} {
+		var got string
+		server := connect.NewServer(func(next connect.ServerFunc) connect.ServerFunc {
+			return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
+				info, _ := connect.CallInfoForServerContext(ctx)
+				got = info.RequestHeader().Get("Authorization")
+				return next(ctx, spec, stream)
+			}
+		})
+		modulev1connect.RegisterModuleServiceHandler(server, &fakeModuleServiceHandler{})
+		c := newClientWithTransport(connectinprocess.New(server), newAuthInterceptor(tc.token))
+
+		msg := c.listModules("someowner")()
+		_, isModules := msg.(modulesMsg)
+		ok.True(t, isModules, ok.Sprintf("got %T: %v", msg, msg))
+		ok.Equal(t, got, tc.want)
+	}
 }
