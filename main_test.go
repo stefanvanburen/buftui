@@ -122,7 +122,7 @@ func Test_parseReference(t *testing.T) {
 				}
 			} else {
 				ok.Equal(t, gotRemote, tc.wantRemote)
-				ok.CmpEqual(t, gotResourceRef, tc.wantResourceRef, protocmp.Transform())
+				ok.Equal(t, gotResourceRef, tc.wantResourceRef, ok.Cmp(protocmp.Transform()))
 			}
 		})
 	}

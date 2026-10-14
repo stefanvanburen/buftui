@@ -255,7 +255,7 @@ func TestPackagesFromDocs_SortsByFQN(t *testing.T) {
 	for i, m := range pkg.messages {
 		names[i] = string(m.FullName())
 	}
-	ok.DeepEqual(t, names, []string{"z.Apple", "z.Banana", "z.Mango"})
+	ok.Equal(t, names, []string{"z.Apple", "z.Banana", "z.Mango"})
 }
 
 func TestIsDeprecated(t *testing.T) {

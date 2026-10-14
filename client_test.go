@@ -177,7 +177,7 @@ func TestResolveRegistry_SkipsMessageSet(t *testing.T) {
 	// declare that extend block.
 	regFiles, skipped, err := resolveRegistry(fdsBytes)
 	ok.MustNoError(t, err)
-	ok.DeepEqual(t, skipped, []string{"mset.Legacy"})
+	ok.Equal(t, skipped, []string{"mset.Legacy"})
 
 	_, err = regFiles.FindDescriptorByName("mset.Legacy")
 	ok.True(t, err != nil, ok.Sprintf("the MessageSet message itself should have been skipped"))

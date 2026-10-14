@@ -90,7 +90,7 @@ func TestConformanceFixture_Proto2Legacy(t *testing.T) {
 	ok.MustNoError(t, err)
 	files, skipped, err := resolveRegistry(fdsBytes)
 	ok.MustNoError(t, err)
-	ok.DeepEqual(t, skipped, []string{"fixture.proto2.Legacy"})
+	ok.Equal(t, skipped, []string{"fixture.proto2.Legacy"})
 	items := packagesFromDocs(files, map[string]bool{"fixture_proto2.proto": true})
 	if !ok.Equal(t, len(items), 1) {
 		return
