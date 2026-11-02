@@ -99,7 +99,7 @@ func Test_parseReference(t *testing.T) {
 			wantError: false,
 		},
 		{
-			reference: strings.Repeat("a", 33) + "/abc",
+			reference: strings.Repeat("a", 49) + "/abc",
 			// Owner name too long, based on protovalidate rules.
 			wantError:           true,
 			wantValidationError: true,
