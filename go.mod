@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	buf.build/gen/go/bufbuild/registry/connectrpc/go/v2 v2.0.0-20260922134654-36be14124d5a.1
-	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.12-20260922134654-36be14124d5a.2
+	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.12-20261021182822-0b1ad74125ef.2
 	buf.build/go/protovalidate v1.4.0
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.0.10
